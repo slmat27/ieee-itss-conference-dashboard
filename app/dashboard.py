@@ -190,24 +190,41 @@ MILESTONE_SEEDS = [
 # Positive = after start date, negative = before start date.
 MILESTONE_DATE_DEFAULTS = {
     # IEEE/ITSS conference lifecycle: application and MOU ~18-24 months before
-    "APPLICATION": {"months": -24, "days": 0},
-    "MOU": {"months": -18, "days": 0},
+    "APPLICATION": {"anchor": "start", "months": -24, "days": 0},
+    "MOU": {"anchor": "start", "months": -18, "days": 0},
     # Budget and banking ~12 months before
-    "BUDGET": {"months": -12, "days": 0},
-    "BANKING": {"months": -9, "days": 0},
+    "BUDGET": {"anchor": "start", "months": -12, "days": 0},
+    "BANKING": {"anchor": "start", "months": -9, "days": 0},
     # CFP ~10 months before, reviews ~3-4 months before
-    "CFP": {"months": -10, "days": 0},
-    "REVIEWS": {"months": -4, "days": 0},
+    "CFP": {"anchor": "start", "months": -10, "days": 0},
+    "REVIEWS": {"anchor": "start", "months": -4, "days": 0},
     # Venue ~9-12 months before, registration ~4-6 months before
-    "VENUE": {"months": -12, "days": 0},
-    "REGISTRATION": {"months": -5, "days": 0},
+    "VENUE": {"anchor": "start", "months": -12, "days": 0},
+    "REGISTRATION": {"anchor": "start", "months": -5, "days": 0},
     # Proceedings ~2-3 months after, financial close ~6-9 months after
-    "PROCEEDINGS": {"months": 2, "days": 0},
-    "FIN_CLOSE": {"months": 9, "days": 0},
+    "PROCEEDINGS": {"anchor": "end", "months": 2, "days": 0},
+    "FIN_CLOSE": {"anchor": "end", "months": 9, "days": 0},
+}
+DEFAULT_MILESTONE_STATUS_SCORES = {
+    "completed": 100.0,
+    "unknown": 0.0,
+    "no_due_date": 65.0,
+    "not_started_far": 80.0,
+    "not_started_upcoming": 60.0,
+    "not_started_due_soon": 30.0,
+    "not_started_overdue": 0.0,
+    "in_progress_on_time": 70.0,
+    "in_progress_recently_overdue": 45.0,
+    "in_progress_overdue": 20.0,
+    "awaiting_on_time": 80.0,
+    "awaiting_recently_overdue": 60.0,
+    "awaiting_overdue": 35.0,
+    "blocked": 0.0,
 }
 
 DEFAULT_SCORE_SETTINGS = {
     "dimension_weights": SCORE_WEIGHTS,
+    "milestone_status_scores": DEFAULT_MILESTONE_STATUS_SCORES,
     "issue_severity_penalties": {"Critical": 12.0, "High": 6.0, "Medium": 3.0, "Low": 1.0, "Informational": 0.0},
     "issue_assessment_factors": {"Unreviewed": 1.0, "Needs Follow-up": 1.0, "On Track": 0.25, "Not an Issue": 0.0},
     "issue_penalty_cap": 40.0,
@@ -883,7 +900,7 @@ def default_feature_flags() -> dict[str, bool]:
 def merged_score_settings(raw: dict[str, Any] | None = None) -> dict[str, Any]:
     raw = raw if isinstance(raw, dict) else {}
     clean = json.loads(json.dumps(DEFAULT_SCORE_SETTINGS))
-    for key in ("dimension_weights", "issue_severity_penalties", "issue_assessment_factors"):
+    for key in ("dimension_weights", "milestone_status_scores", "issue_severity_penalties", "issue_assessment_factors"):
         incoming = raw.get(key, {})
         if isinstance(incoming, dict):
             for item_key, value in incoming.items():
@@ -959,6 +976,8 @@ def validate_score_formula(formula: str) -> None:
             "issue_penalty": 6.0,
             "data_completeness": 82.0,
             "milestone_completion_pct": 65.0,
+            "total_milestones": 10.0,
+            "completed_milestones": 6.0,
             "overdue_milestones": 1.0,
             "blocked_milestones": 0.0,
             "active_milestones": 3.0,
@@ -1091,33 +1110,58 @@ def merged_role_permissions(raw: dict[str, Any] | None) -> dict[str, dict[str, b
 
 def milestone_date_offsets(session: Session | None = None) -> dict[str, dict[str, int]]:
     """Get persisted milestone date offsets, falling back to MILESTONE_DATE_DEFAULTS."""
+    def normalize_offsets(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        merged = json.loads(json.dumps(MILESTONE_DATE_DEFAULTS))
+        for code, offset in raw.items():
+            if not isinstance(offset, dict):
+                continue
+            current = dict(merged.get(str(code).upper(), {"anchor": "start", "months": 0, "days": 0}))
+            anchor = str(offset.get("anchor", current.get("anchor", "start"))).lower()
+            current["anchor"] = anchor if anchor in {"start", "end"} else "start"
+            try:
+                current["months"] = int(offset.get("months", current.get("months", 0)))
+            except (TypeError, ValueError):
+                current["months"] = int(current.get("months", 0))
+            try:
+                current["days"] = int(offset.get("days", current.get("days", 0)))
+            except (TypeError, ValueError):
+                current["days"] = int(current.get("days", 0))
+            merged[str(code).upper()] = current
+        return merged
+
     if session is None:
-        return dict(MILESTONE_DATE_DEFAULTS)
+        return normalize_offsets(MILESTONE_DATE_DEFAULTS)
     setting = session.get(DashboardSettings, "milestone_date_defaults")
     if setting:
         try:
             loaded = json.loads(setting.value_json)
             if isinstance(loaded, dict):
-                merged = dict(MILESTONE_DATE_DEFAULTS)
-                merged.update(loaded)
-                return merged
+                return normalize_offsets(loaded)
         except (json.JSONDecodeError, TypeError):
             pass
-    return dict(MILESTONE_DATE_DEFAULTS)
+    return normalize_offsets(MILESTONE_DATE_DEFAULTS)
 
 
-def milestone_due_from_start(code: str, start_date: date | None, *, offsets: dict[str, dict[str, int]] | None = None) -> date | None:
-    """Calculate milestone due date from conference start date using months/days offset."""
-    if start_date is None:
-        return None
+def milestone_due_date(code: str, start_date: date | None, end_date: date | None, *, offsets: dict[str, dict[str, Any]] | None = None) -> date | None:
+    """Calculate milestone due date from conference start/end date using months/days offset."""
     lookup = offsets if offsets is not None else MILESTONE_DATE_DEFAULTS
     offset = lookup.get(code)
     if offset is None:
         return None
+    anchor = str(offset.get("anchor", "start")).lower()
+    anchor_date = end_date if anchor == "end" else start_date
+    if anchor_date is None:
+        anchor_date = start_date or end_date
+    if anchor_date is None:
+        return None
     total_days = offset["months"] * 30 + offset["days"]
     from datetime import timedelta
-    result = start_date + timedelta(days=total_days)
+    result = anchor_date + timedelta(days=total_days)
     return result
+
+
+def milestone_due_from_start(code: str, start_date: date | None, *, offsets: dict[str, dict[str, int]] | None = None) -> date | None:
+    return milestone_due_date(code, start_date, None, offsets=offsets)
 
 
 def ensure_milestones(conference: Conference, session: Session) -> None:
@@ -1129,7 +1173,7 @@ def ensure_milestones(conference: Conference, session: Session) -> None:
             continue
         due = None
         if conference.start_date:
-            due = milestone_due_from_start(definition.code, conference.start_date, offsets=offsets)
+            due = milestone_due_date(definition.code, conference.start_date, conference.end_date, offsets=offsets)
         status = "Unknown"
         if definition.code == "APPLICATION":
             status = conference.application_status
@@ -1197,39 +1241,40 @@ def lateness_factor(due_date: date | None, step_days: float = 30.0, cap_factor: 
     return min(overdue_days / step_days, cap_factor)
 
 
-def milestone_score(status: str, due_date: date | None) -> float | None:
+def milestone_score(status: str, due_date: date | None, status_scores: dict[str, float] | None = None) -> float | None:
+    scores = {**DEFAULT_MILESTONE_STATUS_SCORES, **(status_scores or {})}
     status = normalize_status(status)
     if status in {"Cancelled", "Not Applicable"}:
         return None
     if status in {"Approved", "Complete", "Published", "Closed"}:
-        return 100.0
+        return float(scores["completed"])
     if status == "Unknown":
-        return 0.0
+        return float(scores["unknown"])
     if due_date is None:
-        return 65.0
+        return float(scores["no_due_date"])
     days = (due_date - date.today()).days
     if status == "Not Started":
         if days > 90:
-            return 80.0
+            return float(scores["not_started_far"])
         if days > 30:
-            return 60.0
+            return float(scores["not_started_upcoming"])
         if days > 0:
-            return 30.0
-        return 0.0
+            return float(scores["not_started_due_soon"])
+        return float(scores["not_started_overdue"])
     if status == "In Progress":
         if days >= 0:
-            return 70.0
+            return float(scores["in_progress_on_time"])
         if days >= -30:
-            return 45.0
-        return 20.0
+            return float(scores["in_progress_recently_overdue"])
+        return float(scores["in_progress_overdue"])
     if status in {"Submitted", "Awaiting IEEE", "Awaiting Conference", "Awaiting External Party"}:
         if days >= 0:
-            return 80.0
+            return float(scores["awaiting_on_time"])
         if days >= -30:
-            return 60.0
-        return 35.0
+            return float(scores["awaiting_recently_overdue"])
+        return float(scores["awaiting_overdue"])
     if status in {"Blocked", "Rejected"}:
-        return 0.0
+        return float(scores["blocked"])
     return None
 
 
@@ -1470,6 +1515,7 @@ def aggregate_finance_status(statuses: dict[str, str]) -> str:
 def recalculate(conference: Conference, session: Session, *, record_history: bool = True) -> None:
     settings = score_settings(session)
     weights = settings.get("dimension_weights", SCORE_WEIGHTS)
+    milestone_status_scores = settings.get("milestone_status_scores", DEFAULT_MILESTONE_STATUS_SCORES)
     ensure_milestones(conference, session)
     session.flush()
     sync_conference_facts_from_milestones(conference)
@@ -1482,7 +1528,7 @@ def recalculate(conference: Conference, session: Session, *, record_history: boo
     details: list[dict[str, Any]] = []
     for milestone in conference.milestones:
         definition = milestone.definition
-        score = milestone_score(milestone.status, milestone.due_date)
+        score = milestone_score(milestone.status, milestone.due_date, milestone_status_scores)
         if score is None:
             continue
         base_weight = float(weights.get(definition.score_dimension, definition.default_weight))
@@ -1503,6 +1549,8 @@ def recalculate(conference: Conference, session: Session, *, record_history: boo
         "issue_penalty": penalty,
         "data_completeness": completeness,
         "milestone_completion_pct": round(float(stats["completion_pct"]), 1),
+        "total_milestones": float(stats["total"]),
+        "completed_milestones": float(len(stats["completed"])),
         "overdue_milestones": float(len(stats["overdue"])),
         "blocked_milestones": float(len(stats["blocked"])),
         "active_milestones": float(len(stats["active"])),
@@ -3364,17 +3412,18 @@ def refresh_all_conference_facts(session: Session = Depends(get_session)) -> dic
 
 
 class MilestoneDatesPayload(BaseModel):
-    milestone_date_defaults: dict[str, dict[str, int]] | None = None
+    milestone_date_defaults: dict[str, dict[str, Any]] | None = None
 
 
 @router.post("/api/settings/recalculate-milestone-dates")
 def recalculate_all_milestone_dates(payload: MilestoneDatesPayload | None = None, session: Session = Depends(get_session)) -> dict[str, Any]:
     if payload and payload.milestone_date_defaults:
-        clean: dict[str, dict[str, int]] = {}
+        clean: dict[str, dict[str, Any]] = {}
         for code, offset in payload.milestone_date_defaults.items():
+            anchor = str(offset.get("anchor", "start")).lower()
             months = int(offset.get("months", 0))
             days = int(offset.get("days", 0))
-            clean[code.upper()] = {"months": months, "days": days}
+            clean[code.upper()] = {"anchor": anchor if anchor in {"start", "end"} else "start", "months": months, "days": days}
         # Merge with defaults to keep any unspecified codes
         merged = dict(MILESTONE_DATE_DEFAULTS)
         merged.update(clean)
@@ -3391,11 +3440,12 @@ def recalculate_all_milestone_dates(payload: MilestoneDatesPayload | None = None
     for conference in conferences:
         for milestone in conference.milestones:
             code = milestone.definition.code
-            new_due = milestone_due_from_start(code, conference.start_date, offsets=offsets)
+            new_due = milestone_due_date(code, conference.start_date, conference.end_date, offsets=offsets)
             if new_due and (milestone.due_date is None or milestone.due_date != new_due):
                 milestone.due_date = new_due
                 milestone.last_updated = now()
                 updated += 1
+        recalculate(conference, session)
     session.commit()
     # Return updated settings
     return {**settings(session), "updated": updated}

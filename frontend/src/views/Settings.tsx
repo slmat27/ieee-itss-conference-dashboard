@@ -1,6 +1,7 @@
 import {
   AppstoreOutlined,
   EditOutlined,
+  FieldTimeOutlined,
   ReloadOutlined,
   SaveOutlined,
   SafetyCertificateOutlined,
@@ -44,6 +45,7 @@ const featureLabels: Record<string, string> = {
 
 const scoreLabels: Record<string, string> = {
   dimension_weights: "Lifecycle Dimension Weights",
+  milestone_status_scores: "Milestone Status Scores",
   issue_severity_penalties: "Issue Severity Penalties",
   issue_assessment_factors: "Issue Review Factors",
   issue_penalty_cap: "Issue Penalty Cap",
@@ -51,11 +53,53 @@ const scoreLabels: Record<string, string> = {
   lateness_cap_factor: "Lateness Cap Factor",
 };
 
+const scoreDescriptions: Record<string, string> = {
+  dimension_weights: "Controls how much each milestone dimension contributes to the base score before issue penalties.",
+  milestone_status_scores: "Controls the score assigned to each milestone timing/status situation before dimension weighting.",
+  issue_severity_penalties: "Penalty points subtracted for each active issue by severity.",
+  issue_assessment_factors: "Multiplier applied to issue penalties based on review assessment.",
+  issue_penalty_cap: "Maximum total issue penalty that can be subtracted from a conference score.",
+  lateness_step_days: "Number of overdue days that equals one lateness step. Smaller values make overdue milestones become more influential faster.",
+  lateness_cap_factor: "Maximum multiplier added to an overdue milestone weight. Higher values make very late milestones dominate the base score more strongly.",
+};
+
+const milestoneScoreLabels: Record<string, string> = {
+  completed: "Completed / Approved / Closed",
+  unknown: "Unknown",
+  no_due_date: "No Due Date",
+  not_started_far: "Not Started, More Than 90 Days Away",
+  not_started_upcoming: "Not Started, 31-90 Days Away",
+  not_started_due_soon: "Not Started, Due Within 30 Days",
+  not_started_overdue: "Not Started, Overdue",
+  in_progress_on_time: "In Progress, On Time",
+  in_progress_recently_overdue: "In Progress, 1-30 Days Overdue",
+  in_progress_overdue: "In Progress, More Than 30 Days Overdue",
+  awaiting_on_time: "Submitted / Awaiting, On Time",
+  awaiting_recently_overdue: "Submitted / Awaiting, 1-30 Days Overdue",
+  awaiting_overdue: "Submitted / Awaiting, More Than 30 Days Overdue",
+  blocked: "Blocked / Rejected",
+};
+
+const milestoneOffsetLabels: Record<string, string> = {
+  APPLICATION: "Conference Application",
+  MOU: "MOU",
+  BUDGET: "Budget",
+  BANKING: "Banking Details",
+  CFP: "Call for Papers",
+  REVIEWS: "Reviews",
+  VENUE: "Venue",
+  REGISTRATION: "Registration",
+  PROCEEDINGS: "Proceedings",
+  FIN_CLOSE: "Financial Close",
+};
+
 const formulaVariables = [
   "base_score",
   "issue_penalty",
   "data_completeness",
   "milestone_completion_pct",
+  "total_milestones",
+  "completed_milestones",
   "overdue_milestones",
   "blocked_milestones",
   "active_milestones",
@@ -126,8 +170,21 @@ export default function Settings() {
   };
 
   const recalculateMilestones = async () => {
-    await api("/settings/recalculate-milestone-dates", { method: "POST" });
-    message.success("Milestone dates recalculated");
+    if (!settings) return;
+    setRecalculating(true);
+    try {
+      const updated = await api<AppSettings & { updated?: number }>("/settings/recalculate-milestone-dates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ milestone_date_defaults: settings.milestone_date_defaults }),
+      });
+      setSettings(updated);
+      message.success(`Milestone dates recalculated${typeof updated.updated === "number" ? `; ${updated.updated} due dates updated` : ""}`);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Failed to recalculate milestones");
+    } finally {
+      setRecalculating(false);
+    }
   };
 
   const recalculateScores = async () => {
@@ -184,6 +241,26 @@ export default function Settings() {
         [source]: normalized,
       },
     });
+  };
+
+  const updateMilestoneOffset = (code: string, field: "anchor" | "months" | "days", value: string | number) => {
+    if (!settings) return;
+    const current = settings.milestone_date_defaults?.[code] ?? { anchor: "start", months: 0, days: 0 };
+    setSettings({
+      ...settings,
+      milestone_date_defaults: {
+        ...(settings.milestone_date_defaults ?? {}),
+        [code]: {
+          anchor: field === "anchor" ? String(value) : String(current.anchor ?? "start"),
+          months: field === "months" ? Number(value) : Number(current.months ?? 0),
+          days: field === "days" ? Number(value) : Number(current.days ?? 0),
+        },
+      },
+    });
+  };
+
+  const updateMilestoneStatusScore = (key: string, value: number) => {
+    updateNestedScoreSetting("milestone_status_scores", key, value);
   };
 
   const permissionRows = useMemo<PermissionRow[]>(
@@ -252,8 +329,10 @@ export default function Settings() {
     ([, value]) => typeof value !== "object" || Array.isArray(value),
   );
   const groupedScoreSettings = Object.entries(settings.score_settings ?? {}).filter(
-    ([, value]) => value && typeof value === "object" && !Array.isArray(value),
+    ([key, value]) => key !== "milestone_status_scores" && value && typeof value === "object" && !Array.isArray(value),
   );
+  const milestoneOffsets = Object.entries(settings.milestone_date_defaults ?? {}).sort(([left], [right]) => left.localeCompare(right));
+  const milestoneStatusScores = settings.score_settings?.milestone_status_scores ?? {};
 
   return (
     <div className="settings-page">
@@ -338,7 +417,10 @@ export default function Settings() {
                   .map(([key, value]) => (
                     <Col xs={24} md={12} key={key}>
                       <div className="score-setting-row is-carded">
-                        <span>{scoreLabels[key] ?? key}</span>
+                        <span>
+                          <strong>{scoreLabels[key] ?? key}</strong>
+                          {scoreDescriptions[key] && <small>{scoreDescriptions[key]}</small>}
+                        </span>
                         <InputNumber
                           value={Number(value)}
                           min={0}
@@ -354,6 +436,11 @@ export default function Settings() {
                 {groupedScoreSettings.map(([key, value]) => (
                   <Col xs={24} lg={12} key={key}>
                     <Card size="small" className="settings-subcard" title={scoreLabels[key] ?? key}>
+                      {scoreDescriptions[key] && (
+                        <Typography.Paragraph type="secondary" className="settings-description">
+                          {scoreDescriptions[key]}
+                        </Typography.Paragraph>
+                      )}
                       <Space direction="vertical" style={{ width: "100%" }}>
                         {Object.entries(value as Record<string, number>).map(([nestedKey, nestedValue]) => (
                           <div className="score-setting-row" key={`${key}-${nestedKey}`}>
@@ -373,6 +460,73 @@ export default function Settings() {
                   </Col>
                 ))}
               </Row>
+            </Card>
+
+            <Card
+              className="settings-panel"
+              title={<><FieldTimeOutlined /> Milestones</>}
+              extra={
+                <Button icon={<ReloadOutlined />} loading={recalculating} onClick={recalculateMilestones}>
+                  Save & Recalculate Milestones
+                </Button>
+              }
+            >
+              <Alert
+                showIcon
+                type="info"
+                className="settings-inline-alert"
+                message="Milestone due dates are calculated from the configured start/end anchor plus the month/day offset. Recalculation also refreshes scores and derived conference status."
+              />
+              <Typography.Title level={5}>Due Date Offsets</Typography.Title>
+              <div className="milestone-config-grid">
+                {milestoneOffsets.map(([code, offset]) => (
+                  <div className="milestone-config-card" key={code}>
+                    <div>
+                      <strong>{milestoneOffsetLabels[code] ?? code}</strong>
+                      <span>{code}</span>
+                    </div>
+                    <Select
+                      value={String(offset.anchor ?? "start")}
+                      options={[
+                        { label: "Conference start", value: "start" },
+                        { label: "Conference end", value: "end" },
+                      ]}
+                      onChange={(value) => updateMilestoneOffset(code, "anchor", value)}
+                    />
+                    <InputNumber
+                      value={Number(offset.months ?? 0)}
+                      addonAfter="months"
+                      onChange={(value) => updateMilestoneOffset(code, "months", Number(value ?? 0))}
+                    />
+                    <InputNumber
+                      value={Number(offset.days ?? 0)}
+                      addonAfter="days"
+                      onChange={(value) => updateMilestoneOffset(code, "days", Number(value ?? 0))}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <Typography.Title level={5} style={{ marginTop: 18 }}>Milestone Status Scores</Typography.Title>
+              <Typography.Paragraph type="secondary" className="settings-description">
+                These values determine how each milestone timing/status condition contributes to the weighted base score. The score formula can reference the resulting <code>base_score</code> plus milestone count variables.
+              </Typography.Paragraph>
+              <div className="milestone-score-grid">
+                {Object.entries(milestoneStatusScores).map(([key, value]) => (
+                  <div className="score-setting-row is-carded" key={key}>
+                    <span>
+                      <strong>{milestoneScoreLabels[key] ?? key}</strong>
+                      <small>{key}</small>
+                    </span>
+                    <InputNumber
+                      value={Number(value)}
+                      min={0}
+                      max={100}
+                      onChange={(nextValue) => updateMilestoneStatusScore(key, Number(nextValue ?? 0))}
+                    />
+                  </div>
+                ))}
+              </div>
             </Card>
 
             <Card className="settings-panel" title={<><SafetyCertificateOutlined /> Status Mapping</>}>

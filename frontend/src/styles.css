@@ -1356,6 +1356,19 @@ h3 {
   font-weight: 700;
 }
 
+.score-setting-row span strong,
+.score-setting-row span small {
+  display: block;
+}
+
+.score-setting-row span small {
+  margin-top: 3px;
+  color: var(--iav-g4);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .score-setting-row .ant-input-number-group-wrapper,
 .score-setting-row .ant-input-number {
   width: 100%;
@@ -1524,6 +1537,59 @@ h3 {
   color: var(--iav-g4);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.settings-description {
+  margin-bottom: 12px !important;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.milestone-config-grid,
+.milestone-score-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.milestone-config-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.milestone-score-grid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.milestone-config-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 12px;
+  background: #f8fbff;
+  border: 1px solid rgba(0, 26, 84, 0.1);
+  border-radius: 8px;
+}
+
+.milestone-config-card strong,
+.milestone-config-card span {
+  display: block;
+}
+
+.milestone-config-card strong {
+  color: var(--iav-b0);
+  font-size: 13px;
+}
+
+.milestone-config-card span {
+  margin-top: 2px;
+  color: var(--iav-g4);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.milestone-config-card .ant-input-number-group-wrapper,
+.milestone-config-card .ant-input-number,
+.milestone-config-card .ant-select {
+  width: 100%;
 }
 
 .draft-body {
