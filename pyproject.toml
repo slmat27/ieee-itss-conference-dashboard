@@ -1,0 +1,51 @@
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12"]
+build-backend = "uv_build"
+
+[project]
+name = "ieee-itss-conference-dashboard"
+version = "0.1.0"
+description = "Local-first dashboard for monitoring IEEE ITSS conference portfolio readiness, issues, imports, reports, documents, and AI-assisted operations."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi",
+    "email-validator",
+    "httpx",
+    "openai>=1.0",
+    "openpyxl",
+    "pandas",
+    "pydantic>=2",
+    "pymupdf",
+    "python-docx",
+    "python-multipart",
+    "sqlalchemy>=2",
+    "uvicorn[standard]",
+]
+
+[dependency-groups]
+dev = [
+    "mypy",
+    "pytest",
+    "ruff",
+]
+
+[[tool.uv.index]]
+name = "iav-artifactory"
+url = "https://artifactory.iav.com/artifactory/api/pypi/pypi-remote/simple"
+default = true
+
+[tool.uv.build-backend]
+module-name = "app"
+module-root = "."
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = [
+    "storage",
+]

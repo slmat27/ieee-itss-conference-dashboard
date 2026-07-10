@@ -1,0 +1,175 @@
+:root {
+  /* Shared UI tokens retained for compatibility with reusable starter widgets. */
+  /* Corporate palette primitives */
+  --Colors__G1: #f2f4f4;
+  --Colors__G2: #c8c6c6;
+  --Colors__G3: #969494;
+  --Colors__G4: #696969;
+  --Colors__G5: #333333;
+  --Colors__G6: #1a1a1a;
+  --Colors__White: #ffffff;
+  --Colors__Black: #000000;
+  --Colors__B0: #001a54;
+  --Colors__B1: #041e96;
+  --Colors__B2: #1446eb;
+  --Colors__B3: #0091ff;
+  --Colors__B4: #52c9ff;
+  --Colors__B5: #96e7ff;
+  --Colors__B6: #d2f5ff;
+  --Colors__M1: #5500b4;
+  --Colors__M2: #a200e6;
+  --Colors__M3: #dc46f3;
+  --Colors__M4: #ff73fa;
+  --Colors__M5: #ffafff;
+  --Colors__M6: #fddeff;
+  --Colors__Red: #ff0000;
+  --Colors__Yellow1: #ffd800;
+  --Colors__Orange1: #ff9000;
+  --Colors__Green1: #80d800;
+  --Colors__Green2: #28a000;
+
+  /* Chart palette primitives */
+  --ColorsCharts__Data1: #1446eb;
+  --ColorsCharts__Data2: #0091ff;
+  --ColorsCharts__Data3: #52c9ff;
+  --ColorsCharts__Data4: #a200e6;
+  --ColorsCharts__Data5: #dc46f3;
+
+  /* Typography */
+  --app-font-sans:
+    Roboto, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --app-font-heading: var(--app-font-sans);
+  --font-weight-normal: 400;
+  --font-weight-strong: 600;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+  --font-size-heading-1: 38px;
+  --font-size-heading-2: 30px;
+  --font-size-heading-3: 24px;
+  --font-size-heading-4: 20px;
+  --font-size-heading-5: 16px;
+  --line-height-base: 1.5;
+
+  /* Spacing */
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radius */
+  --radius-none: 0px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* Layout */
+  --layout-header-height: 64px;
+  --layout-content-max-width: 1440px;
+  --layout-sidebar-width: 256px;
+  --layout-navbar-brand-width: 225px;
+  --layout-navbar-logo-width: 102px;
+  --layout-navbar-logo-height: 57px;
+  --layout-content-padding: var(--space-6);
+  --layout-content-padding-mobile: var(--space-4);
+  --layout-page-padding-y: 28px;
+  --layout-page-padding-x: var(--space-6);
+  --layout-page-padding-y-mobile: 18px;
+  --layout-page-padding-bottom: 48px;
+  --layout-page-padding-bottom-mobile: 40px;
+
+  /* Controls */
+  --control-height-sm: 32px;
+  --control-height-md: 40px;
+  --control-height-lg: 44px;
+  --control-icon-size: 16px;
+  --control-header-icon-size: 18px;
+  --menu-item-height: 40px;
+  --menu-subitem-icon-size: 12px;
+  --border-width-default: 1px;
+
+  /* Palette and semantic surfaces */
+  --background: var(--Colors__White);
+  --foreground: var(--Colors__B0);
+  --text: var(--Colors__B0);
+  --text-secondary: var(--Colors__G4);
+  --text-tertiary: var(--Colors__G3);
+  --text-quaternary: var(--Colors__G2);
+  --muted: var(--Colors__G1);
+  --muted-foreground: var(--Colors__G4);
+  --card: var(--Colors__White);
+  --card-foreground: var(--Colors__B0);
+  --bg-layout: var(--Colors__G1);
+  --bg-container: var(--Colors__White);
+  --popover: var(--Colors__White);
+  --popover-foreground: var(--Colors__B0);
+  --surface-elevated: var(--Colors__White);
+  --surface-subtle: var(--Colors__G1);
+  --surface-dark: var(--Colors__B0);
+  --surface-dark-hover: var(--Colors__B1);
+  --surface-dark-border: rgba(255, 255, 255, 0.08);
+  --surface-dark-hover-overlay: rgba(255, 255, 255, 0.08);
+  --surface-dark-outline: rgba(255, 255, 255, 0.72);
+  --surface-dark-muted: rgba(255, 255, 255, 0.78);
+  --surface-border: var(--Colors__G2);
+  --border: var(--Colors__G2);
+  --border-subtle: rgba(0, 26, 84, 0.08);
+  --input: rgba(0, 26, 84, 0.16);
+  --ring: rgba(0, 145, 255, 0.28);
+  --surface-quiet: var(--Colors__G1);
+
+  --primary: var(--Colors__B3);
+  --primary-hover: #33a7ff;
+  --primary-active: #0074cc;
+  --primary-foreground: var(--Colors__White);
+  --info: var(--Colors__B2);
+  --secondary: var(--Colors__B6);
+  --secondary-foreground: var(--Colors__B1);
+  --accent: var(--Colors__M6);
+  --accent-foreground: var(--Colors__B1);
+
+  --control-item-bg-hover: var(--Colors__G1);
+  --control-item-bg-active: #cce9ff;
+  --control-item-bg-active-hover: #b2deff;
+  --menu-hover: #d6d9de;
+  --menu-hover-on-dark: #334876;
+  --menu-selected-bg: var(--Colors__B0);
+  --menu-selected-color: var(--Colors__White);
+  --menu-submenu-bg: var(--Colors__G1);
+
+  --destructive: var(--Colors__Red);
+  --destructive-foreground: var(--Colors__White);
+  --warning: var(--Colors__Orange1);
+  --warning-foreground: #3b2400;
+  --success: var(--Colors__Green2);
+  --success-foreground: var(--Colors__White);
+
+  --chart-1: var(--ColorsCharts__Data1);
+  --chart-2: var(--ColorsCharts__Data2);
+  --chart-3: var(--ColorsCharts__Data3);
+  --chart-4: var(--ColorsCharts__Data4);
+  --chart-5: var(--ColorsCharts__Data5);
+
+  --shadow-soft: 0 12px 30px rgba(0, 26, 84, 0.08);
+  --shadow-panel: 0 24px 60px rgba(0, 26, 84, 0.12);
+  --shadow-ring: 0 0 0 4px rgba(0, 145, 255, 0.12);
+  --shadow-surface:
+    0 1px 2px rgba(0, 26, 84, 0.06), 0 8px 24px rgba(0, 26, 84, 0.08);
+  --shadow-panel-strong: 0 16px 40px rgba(0, 26, 84, 0.1);
+  --shadow-primary: 0 10px 24px rgba(0, 145, 255, 0.18);
+
+  /* Ant Design helper aliases */
+  --ant-card-surface-shadow: var(--shadow-panel);
+  --ant-card-compact-shadow: var(--shadow-soft);
+}

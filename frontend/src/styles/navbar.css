@@ -1,0 +1,110 @@
+@layer components {
+  .app-navbar {
+    width: 100%;
+    border-radius: 0;
+    background: var(--surface-dark);
+    border-bottom: var(--border-width-default) solid var(--surface-dark-border);
+    box-shadow: none;
+  }
+
+  .app-navbar.ant-layout-header {
+    height: var(--layout-header-height);
+    padding: 0;
+    line-height: normal;
+  }
+
+  .app-navbar__inner {
+    width: 100%;
+    margin: 0;
+    height: var(--layout-header-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: 0 var(--layout-page-padding-x);
+  }
+
+  .app-navbar__brand {
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-3);
+  }
+
+  .app-navbar__title {
+    margin-block: 0;
+    line-height: 1;
+    color: var(--background) !important;
+    font-family: var(--app-font-heading);
+    font-weight: var(--font-weight-normal) !important;
+  }
+
+  .app-navbar__cluster {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-4);
+    min-width: 0;
+    margin-left: auto;
+  }
+
+  .app-navbar__logo {
+    display: block;
+    width: var(--layout-navbar-logo-width);
+    height: var(--layout-navbar-logo-height);
+    object-fit: contain;
+    object-position: right center;
+    margin-left: 0;
+    flex: none;
+  }
+
+  .app-navbar__icon-button {
+    color: var(--background) !important;
+  }
+
+  .app-navbar__icon-button:hover,
+  .app-navbar__icon-button:focus-visible {
+    background: var(--surface-dark-hover-overlay) !important;
+    color: var(--background) !important;
+  }
+
+  .app-navbar__icon-button > span,
+  .app-navbar__icon-button .anticon {
+    color: currentColor !important;
+    font-size: var(--control-header-icon-size);
+  }
+
+  .app-navbar__job-events .ant-popover-inner {
+    padding: 0;
+  }
+
+  .app-navbar__job-events .ant-popover-title {
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    border-bottom: var(--border-width-default) solid var(--border-subtle);
+    color: var(--text);
+    font-weight: var(--font-weight-strong);
+  }
+
+  .app-navbar__job-events .ant-popover-inner-content {
+    padding: 0;
+  }
+
+  @media (max-width: 1100px) {
+    .app-navbar__inner {
+      padding-inline: var(--layout-page-padding-x-mobile);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .app-navbar__brand {
+      width: auto;
+    }
+
+    .app-navbar__cluster {
+      gap: var(--space-2);
+    }
+  }
+}

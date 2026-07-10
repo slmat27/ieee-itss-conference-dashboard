@@ -1,0 +1,55 @@
+schemaVersion: 1
+pocId: ieee-itss-conference-dashboard
+title: "IEEE ITSS Conference Status Dashboard"
+description: "Local-first IEEE ITSS conference portfolio dashboard with scoring, imports, issues, documents, RAG assistance, exports, and Azure OpenAI-backed drafting."
+entrypoint: app/workflow.py
+template:
+  base: main-app
+  overlays:
+    - local-sqlite-portfolio
+    - document-rag-assistant
+    - human-review-imports
+inputs:
+  - name: conference-status-files
+    description: Canonical CSV or Excel files containing conference, contact, and issue status data.
+    required: false
+  - name: knowledge-documents
+    description: PDF, DOCX, TXT, or Markdown documents for IEEE and ITSS conference operations retrieval.
+    required: false
+  - name: azure-openai-settings
+    description: Local .env values for Azure OpenAI chat and optional embedding deployments.
+    required: false
+outputs:
+  - name: sqlite-portfolio
+    description: Local SQLite database with conference records, scores, issues, snapshots, documents, and email drafts.
+  - name: import-preview
+    description: Validation and preview summaries before import changes are approved.
+  - name: exports
+    description: Portfolio Excel and IEEE-styled PDF report downloads.
+  - name: ai-assistance
+    description: RAG answers, issue recommendations, and editable email drafts.
+validation:
+  testCommand:
+    - D:/GitLab/agentic_webapp_ieee/creator-agent/workspace/validation-venv/Scripts/python.exe
+    - -m
+    - pytest
+    - tests
+    - -p
+    - no:cacheprovider
+    - --basetemp
+    - ../../pytest-temp
+  smokeCommand:
+    - D:/GitLab/agentic_webapp_ieee/creator-agent/workspace/validation-venv/Scripts/python.exe
+    - -m
+    - pytest
+    - tests/test_dashboard.py
+    - -p
+    - no:cacheprovider
+    - -k
+    - test_conference_can_be_created_and_scored
+    - --basetemp
+    - ../../pytest-temp
+llm:
+  required: false
+  defaultModel: default-reasoning
+  notes: "Backend-only Azure OpenAI integration uses AZURE_OPENAI_* values from the local .env. Non-AI functions work without a configured deployment."
