@@ -543,8 +543,6 @@ export default function ConferenceDetail() {
     { title: "Name", dataIndex: "name", key: "name" },
     { title: "Email", dataIndex: "email", key: "email", render: (value: string) => value || "-" },
     { title: "Role", dataIndex: "role", key: "role", render: (value: string) => value || "-" },
-    { title: "Organization", dataIndex: "organization", key: "organization", render: (value: string) => value || "-" },
-    { title: "Phone", dataIndex: "phone", key: "phone", render: (value: string) => value || "-" },
     {
       title: "Primary",
       dataIndex: "is_primary",
