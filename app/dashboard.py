@@ -213,6 +213,7 @@ DEFAULT_SCORE_SETTINGS = {
     "issue_penalty_cap": 40.0,
     "lateness_step_days": 30.0,
     "lateness_cap_factor": 3.0,
+    "score_formula": "max(0, min(100, base_score - issue_penalty))",
 }
 
 DEFAULT_ASSISTANT_SYSTEM_PROMPT = (
@@ -894,7 +895,76 @@ def merged_score_settings(raw: dict[str, Any] | None = None) -> dict[str, Any]:
         clean["issue_penalty_cap"] = max(0.0, float(raw.get("issue_penalty_cap", clean["issue_penalty_cap"])))
     except (TypeError, ValueError):
         pass
+    for key in ("lateness_step_days", "lateness_cap_factor"):
+        try:
+            clean[key] = max(0.0, float(raw.get(key, clean[key])))
+        except (TypeError, ValueError):
+            pass
+    formula = str(raw.get("score_formula", clean["score_formula"])).strip()
+    if formula:
+        clean["score_formula"] = formula
     return clean
+
+
+SCORE_FORMULA_FUNCTIONS = {"min": min, "max": max, "round": round, "abs": abs}
+SCORE_FORMULA_ALLOWED_NODES = (
+    ast.Expression,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.Call,
+    ast.Name,
+    ast.Load,
+    ast.Constant,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.Pow,
+    ast.Mod,
+    ast.USub,
+    ast.UAdd,
+)
+
+
+def evaluate_score_formula(formula: str, context: dict[str, float]) -> float:
+    try:
+        tree = ast.parse(formula, mode="eval")
+    except SyntaxError as exc:
+        raise ValueError(f"Invalid score formula syntax: {exc.msg}") from exc
+    allowed_names = set(context) | set(SCORE_FORMULA_FUNCTIONS)
+    for node in ast.walk(tree):
+        if not isinstance(node, SCORE_FORMULA_ALLOWED_NODES):
+            raise ValueError(f"Unsupported score formula element: {type(node).__name__}")
+        if isinstance(node, ast.Name) and node.id not in allowed_names:
+            raise ValueError(f"Unknown score formula variable: {node.id}")
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name) or node.func.id not in SCORE_FORMULA_FUNCTIONS:
+                raise ValueError("Only min, max, round, and abs can be used as score formula functions.")
+    result = eval(
+        compile(tree, "<score_formula>", "eval"),
+        {"__builtins__": {}},
+        {**SCORE_FORMULA_FUNCTIONS, **context},
+    )
+    try:
+        return float(result)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Score formula must return a number.") from exc
+
+
+def validate_score_formula(formula: str) -> None:
+    evaluate_score_formula(
+        formula,
+        {
+            "base_score": 78.0,
+            "issue_penalty": 6.0,
+            "data_completeness": 82.0,
+            "milestone_completion_pct": 65.0,
+            "overdue_milestones": 1.0,
+            "blocked_milestones": 0.0,
+            "active_milestones": 3.0,
+            "due_soon_milestones": 2.0,
+        },
+    )
 
 
 def score_settings(session: Session) -> dict[str, Any]:
@@ -1426,7 +1496,24 @@ def recalculate(conference: Conference, session: Session, *, record_history: boo
     base = round(weighted / total_weight, 1) if total_weight else 0.0
     penalty = issue_penalty(conference.issues, settings)
     completeness = data_completeness(conference)
-    score = round(max(0.0, base - penalty), 1)
+    stats = milestone_stats(conference)
+    formula = str(settings.get("score_formula", DEFAULT_SCORE_SETTINGS["score_formula"])).strip() or DEFAULT_SCORE_SETTINGS["score_formula"]
+    formula_context = {
+        "base_score": base,
+        "issue_penalty": penalty,
+        "data_completeness": completeness,
+        "milestone_completion_pct": round(float(stats["completion_pct"]), 1),
+        "overdue_milestones": float(len(stats["overdue"])),
+        "blocked_milestones": float(len(stats["blocked"])),
+        "active_milestones": float(len(stats["active"])),
+        "due_soon_milestones": float(len(stats["due_soon"])),
+    }
+    try:
+        raw_score = evaluate_score_formula(formula, formula_context)
+    except ValueError:
+        formula = DEFAULT_SCORE_SETTINGS["score_formula"]
+        raw_score = evaluate_score_formula(formula, formula_context)
+    score = round(max(0.0, min(100.0, raw_score)), 1)
     dimension_scores = {
         name: round(dimension_totals[name] / dimension_weights[name], 1)
         for name in dimension_totals
@@ -1449,7 +1536,14 @@ def recalculate(conference: Conference, session: Session, *, record_history: boo
     conference.phase_override = False
     conference.conference_status = derived_status
     conference.status_band = status_band(score, completeness, derived_status)
-    conference.score_details_json = json.dumps({"milestones": details, "dimension_scores": dimension_scores})
+    conference.score_details_json = json.dumps(
+        {
+            "milestones": details,
+            "dimension_scores": dimension_scores,
+            "formula": formula,
+            "formula_context": formula_context,
+        }
+    )
     if record_history:
         session.add(
             ScoreHistory(
@@ -3072,6 +3166,12 @@ def update_settings(payload: SettingsUpdate, session: Session = Depends(get_sess
         setting.value_json = json.dumps(payload.score_weights)
     if payload.score_settings is not None:
         setting = session.get(DashboardSettings, "score_settings")
+        formula = payload.score_settings.get("score_formula") if isinstance(payload.score_settings, dict) else None
+        if formula is not None:
+            try:
+                validate_score_formula(str(formula))
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
         merged = merged_score_settings(payload.score_settings)
         if setting:
             setting.value_json = json.dumps(merged)
@@ -3109,6 +3209,16 @@ def update_settings(payload: SettingsUpdate, session: Session = Depends(get_sess
             session.add(DashboardSettings(key="assistant_system_prompt", value_json=json.dumps(prompt)))
     session.commit()
     return settings(session)
+
+
+@router.post("/api/settings/recalculate-scores")
+def recalculate_all_scores(session: Session = Depends(get_session)) -> dict[str, Any]:
+    updated = 0
+    for conference in session.scalars(select(Conference)):
+        recalculate(conference, session)
+        updated += 1
+    session.commit()
+    return {"updated": updated, "message": f"Recalculated scores and statuses for {updated} conferences."}
 
 
 @router.patch("/api/settings/reference-config")

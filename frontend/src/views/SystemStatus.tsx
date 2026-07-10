@@ -8,7 +8,7 @@ import {
   ReloadOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { Alert, Button, Card, Col, Descriptions, Row, Space, Statistic, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Descriptions, Input, Row, Space, Statistic, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
@@ -30,6 +30,12 @@ export default function SystemStatus() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [llmStatus, setLlmStatus] = useState<Record<string, any> | null>(null);
+  const [embeddingStatus, setEmbeddingStatus] = useState<Record<string, any> | null>(null);
+  const [llmTest, setLlmTest] = useState("Reply with one short sentence confirming the IEEE ITSS dashboard LLM connection works.");
+  const [llmTestResult, setLlmTestResult] = useState<Record<string, any> | null>(null);
+  const [checkingLlm, setCheckingLlm] = useState(false);
+  const [checkingEmbeddings, setCheckingEmbeddings] = useState(false);
 
   const loadStatus = () => {
     setLoading(true);
@@ -53,6 +59,49 @@ export default function SystemStatus() {
     const interval = setInterval(loadStatus, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const verifyLLM = async () => {
+    setCheckingLlm(true);
+    try {
+      const status = await api<Record<string, any>>("/settings/verify-azure-openai", { method: "POST" });
+      setLlmStatus(status);
+      message[status.ok ? "success" : "warning"](status.message || "LLM verification complete");
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "LLM verification failed");
+    } finally {
+      setCheckingLlm(false);
+    }
+  };
+
+  const verifyEmbeddings = async () => {
+    setCheckingEmbeddings(true);
+    try {
+      const status = await api<Record<string, any>>("/settings/verify-embeddings", { method: "POST" });
+      setEmbeddingStatus(status);
+      message[status.ok ? "success" : "warning"](status.message || "Embedding verification complete");
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Embedding verification failed");
+    } finally {
+      setCheckingEmbeddings(false);
+    }
+  };
+
+  const testLLM = async () => {
+    setCheckingLlm(true);
+    try {
+      const result = await api<Record<string, any>>("/settings/test-llm-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: llmTest }),
+      });
+      setLlmTestResult(result);
+      message[result.ok ? "success" : "warning"](result.message || "LLM test message complete");
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "LLM test message failed");
+    } finally {
+      setCheckingLlm(false);
+    }
+  };
 
   if (loading && !health) {
     return (
@@ -157,7 +206,7 @@ export default function SystemStatus() {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="AI Configuration">
+          <Card title="AI Configuration Summary">
             <Descriptions column={1} bordered size="small">
               <Descriptions.Item label="LLM provider">{llmConfig.provider || "Unknown"}</Descriptions.Item>
               <Descriptions.Item label="LLM endpoint">{llmConfig.endpoint || "-"}</Descriptions.Item>
@@ -165,6 +214,60 @@ export default function SystemStatus() {
               <Descriptions.Item label="Embedding endpoint">{embeddingConfig.endpoint || "-"}</Descriptions.Item>
               <Descriptions.Item label="Embedding model">{embeddingConfig.model || "-"}</Descriptions.Item>
             </Descriptions>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} className="section-gap">
+        <Col xs={24} lg={12}>
+          <Card title={<><ThunderboltOutlined /> LLM Connection</>}>
+            <Descriptions size="small" column={1} bordered>
+              <Descriptions.Item label="Provider">{llmConfig.provider || "Unknown"}</Descriptions.Item>
+              <Descriptions.Item label="Endpoint">{llmConfig.endpoint || "-"}</Descriptions.Item>
+              <Descriptions.Item label="API key">{llmConfig.api_key_present ? "Present" : "Missing"}</Descriptions.Item>
+              <Descriptions.Item label="Chat deployment/model">{llmConfig.chat_deployment || llmConfig.deployment || "-"}</Descriptions.Item>
+            </Descriptions>
+            <Space wrap style={{ marginTop: 14 }}>
+              <Button icon={<CheckCircleOutlined />} onClick={verifyLLM} loading={checkingLlm}>Verify Connection</Button>
+            </Space>
+            {llmStatus && (
+              <Alert
+                style={{ marginTop: 12 }}
+                type={llmStatus.ok ? "success" : "warning"}
+                showIcon
+                message={llmStatus.message}
+                description={llmStatus.checked_at}
+              />
+            )}
+            <div className="llm-test-box" style={{ marginTop: 14 }}>
+              <strong>One-shot LLM test</strong>
+              <Input.TextArea rows={3} value={llmTest} onChange={(event) => setLlmTest(event.target.value)} />
+              <Button onClick={testLLM} loading={checkingLlm}>Send Test Message</Button>
+              {llmTestResult && <span className="llm-response">{llmTestResult.response || llmTestResult.message}</span>}
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title={<><CloudServerOutlined /> Embedding Service</>}>
+            <Descriptions size="small" column={1} bordered>
+              <Descriptions.Item label="Provider">{embeddingConfig.provider || "IAV on-prem TEI"}</Descriptions.Item>
+              <Descriptions.Item label="Endpoint">{embeddingConfig.endpoint || "-"}</Descriptions.Item>
+              <Descriptions.Item label="Route">{embeddingConfig.route || "/v1/embeddings"}</Descriptions.Item>
+              <Descriptions.Item label="Model">{embeddingConfig.model || "-"}</Descriptions.Item>
+              <Descriptions.Item label="API key required">{embeddingConfig.api_key_required ? "Yes" : "No"}</Descriptions.Item>
+            </Descriptions>
+            <Space wrap style={{ marginTop: 14 }}>
+              <Button icon={<CheckCircleOutlined />} onClick={verifyEmbeddings} loading={checkingEmbeddings}>Verify Embeddings</Button>
+            </Space>
+            {embeddingStatus && (
+              <Alert
+                style={{ marginTop: 12 }}
+                type={embeddingStatus.ok ? "success" : "warning"}
+                showIcon
+                message={`${embeddingStatus.provider || "Embeddings"}: ${embeddingStatus.message}`}
+                description={`Model ${embeddingStatus.model || "-"}; endpoint ${embeddingStatus.endpoint || "-"}`}
+              />
+            )}
           </Card>
         </Col>
       </Row>

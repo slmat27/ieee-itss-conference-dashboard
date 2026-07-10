@@ -1342,6 +1342,14 @@ h3 {
   align-items: center;
 }
 
+.score-setting-row.is-carded {
+  min-height: 58px;
+  padding: 12px;
+  background: #f8fbff;
+  border: 1px solid rgba(0, 26, 84, 0.1);
+  border-radius: 8px;
+}
+
 .score-setting-row span {
   color: var(--iav-b0);
   font-size: 13px;
@@ -1429,6 +1437,93 @@ h3 {
 
 .reference-editor-select {
   width: 100%;
+}
+
+.settings-page {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-panel {
+  border: 1px solid rgba(0, 26, 84, 0.1);
+  box-shadow: 0 12px 30px rgba(0, 26, 84, 0.06);
+}
+
+.settings-panel .ant-card-head {
+  border-bottom-color: rgba(0, 26, 84, 0.08);
+}
+
+.settings-panel .ant-card-head-title {
+  color: var(--iav-b0);
+  font-weight: 850;
+}
+
+.settings-panel-highlight {
+  border-top: 3px solid var(--iav-b2);
+}
+
+.settings-subcard {
+  background: #ffffff;
+  border-color: rgba(0, 26, 84, 0.1);
+}
+
+.settings-inline-alert {
+  margin-bottom: 14px;
+}
+
+.score-formula-box {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 14px;
+  background: #f8fbff;
+  border: 1px solid rgba(0, 145, 255, 0.18);
+  border-radius: 8px;
+}
+
+.score-formula-box .ant-typography {
+  margin-bottom: 0;
+}
+
+.formula-token-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.formula-token-list .ant-tag {
+  margin-inline-end: 0;
+  color: var(--iav-b0);
+  background: #ffffff;
+  border-color: rgba(0, 145, 255, 0.28);
+}
+
+.settings-control-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background: #f8fbff;
+  border: 1px solid rgba(0, 26, 84, 0.1);
+  border-radius: 8px;
+}
+
+.settings-control-row strong,
+.settings-control-row span {
+  display: block;
+}
+
+.settings-control-row strong {
+  color: var(--iav-b0);
+  font-size: 13px;
+}
+
+.settings-control-row span {
+  margin-top: 3px;
+  color: var(--iav-g4);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .draft-body {

@@ -1,9 +1,10 @@
 import {
-  CheckCircleOutlined,
+  AppstoreOutlined,
   EditOutlined,
   ReloadOutlined,
   SaveOutlined,
-  SettingOutlined,
+  SafetyCertificateOutlined,
+  SlidersOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import {
@@ -11,7 +12,6 @@ import {
   Button,
   Card,
   Col,
-  Descriptions,
   Input,
   InputNumber,
   Row,
@@ -43,29 +43,33 @@ const featureLabels: Record<string, string> = {
 };
 
 const scoreLabels: Record<string, string> = {
-  base_score: "Base Score",
-  data_completeness_weight: "Data Completeness Weight",
-  milestone_adherence_weight: "Milestone Adherence Weight",
-  issue_penalty_per_open: "Issue Penalty Per Open Issue",
-  max_issue_penalty: "Maximum Issue Penalty",
-  dimension_weights: "Dimension Weights",
+  dimension_weights: "Lifecycle Dimension Weights",
   issue_severity_penalties: "Issue Severity Penalties",
-  issue_assessment_factors: "Issue Assessment Factors",
+  issue_assessment_factors: "Issue Review Factors",
   issue_penalty_cap: "Issue Penalty Cap",
   lateness_step_days: "Lateness Step Days",
   lateness_cap_factor: "Lateness Cap Factor",
 };
 
+const formulaVariables = [
+  "base_score",
+  "issue_penalty",
+  "data_completeness",
+  "milestone_completion_pct",
+  "overdue_milestones",
+  "blocked_milestones",
+  "active_milestones",
+  "due_soon_milestones",
+];
+
 type PermissionRow = { key: string; label: string; description: string };
+type MappingRow = { source: string; normalized: string };
 
 export default function Settings() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [llmStatus, setLlmStatus] = useState<Record<string, any> | null>(null);
-  const [embeddingStatus, setEmbeddingStatus] = useState<Record<string, any> | null>(null);
-  const [llmTest, setLlmTest] = useState("Reply with one short sentence confirming the IEEE ITSS dashboard LLM connection works.");
-  const [llmTestResult, setLlmTestResult] = useState<Record<string, any> | null>(null);
+  const [recalculating, setRecalculating] = useState(false);
 
   const loadSettings = () => {
     setLoading(true);
@@ -86,7 +90,7 @@ export default function Settings() {
       const updated = await api<AppSettings>("/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...patch }),
+        body: JSON.stringify(patch),
       });
       setSettings(updated);
       message.success("Settings saved");
@@ -108,33 +112,12 @@ export default function Settings() {
       });
       setSettings(updated);
       const changed = Object.values(updated.reference_cleanup ?? {}).reduce((sum, value) => sum + value, 0);
-      message.success(changed ? `Reference configuration saved; ${changed} existing values normalized to Unknown.` : "Reference configuration saved");
+      message.success(changed ? `Reference lists saved; ${changed} existing values moved to Unknown.` : "Reference lists saved");
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Failed to save reference configuration");
     } finally {
       setSaving(false);
     }
-  };
-
-  const verifyLLM = async () => {
-    const status = await api<Record<string, any>>("/settings/verify-azure-openai", { method: "POST" });
-    setLlmStatus(status);
-    message[status.ok ? "success" : "warning"](status.message || "LLM verification complete");
-  };
-
-  const verifyEmbeddings = async () => {
-    const status = await api<Record<string, any>>("/settings/verify-embeddings", { method: "POST" });
-    setEmbeddingStatus(status);
-    message[status.ok ? "success" : "warning"](status.message || "Embedding verification complete");
-  };
-
-  const testLLM = async () => {
-    const result = await api<Record<string, any>>("/settings/test-llm-message", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: llmTest }),
-    });
-    setLlmTestResult(result);
   };
 
   const refreshFacts = async () => {
@@ -147,9 +130,73 @@ export default function Settings() {
     message.success("Milestone dates recalculated");
   };
 
+  const recalculateScores = async () => {
+    setRecalculating(true);
+    setSaving(true);
+    try {
+      const updated = await api<AppSettings>("/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ score_settings: settings?.score_settings }),
+      });
+      setSettings(updated);
+      const result = await api<Record<string, any>>("/settings/recalculate-scores", { method: "POST" });
+      message.success(result.message || `${result.updated ?? 0} conference scores recalculated`);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Failed to recalculate scores");
+    } finally {
+      setSaving(false);
+      setRecalculating(false);
+    }
+  };
+
+  const updateScoreSetting = (key: string, value: number | string) => {
+    if (!settings) return;
+    setSettings({
+      ...settings,
+      score_settings: {
+        ...settings.score_settings,
+        [key]: value,
+      },
+    });
+  };
+
+  const updateNestedScoreSetting = (group: string, key: string, value: number) => {
+    if (!settings) return;
+    setSettings({
+      ...settings,
+      score_settings: {
+        ...settings.score_settings,
+        [group]: {
+          ...(settings.score_settings[group] ?? {}),
+          [key]: value,
+        },
+      },
+    });
+  };
+
+  const updateStatusMapping = (source: string, normalized: string) => {
+    if (!settings) return;
+    setSettings({
+      ...settings,
+      status_mappings: {
+        ...(settings.status_mappings ?? {}),
+        [source]: normalized,
+      },
+    });
+  };
+
   const permissionRows = useMemo<PermissionRow[]>(
     () => settings?.permission_catalog ?? [],
     [settings],
+  );
+
+  const mappingRows = useMemo<MappingRow[]>(
+    () =>
+      Object.entries(settings?.status_mappings ?? {})
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([source, normalized]) => ({ source, normalized })),
+    [settings?.status_mappings],
   );
 
   const roleColumns: ColumnsType<PermissionRow> = [
@@ -199,40 +246,23 @@ export default function Settings() {
     return <Typography.Text type="danger">Failed to load settings</Typography.Text>;
   }
 
-  const llmConfig = settings.azure_openai ?? settings.llm_config ?? {};
-  const embeddingConfig = settings.embeddings ?? {};
-
-  const updateScoreSetting = (key: string, value: number) => {
-    setSettings({
-      ...settings,
-      score_settings: {
-        ...settings.score_settings,
-        [key]: value,
-      },
-    });
-  };
-
-  const updateNestedScoreSetting = (group: string, key: string, value: number) => {
-    setSettings({
-      ...settings,
-      score_settings: {
-        ...settings.score_settings,
-        [group]: {
-          ...(settings.score_settings[group] ?? {}),
-          [key]: value,
-        },
-      },
-    });
-  };
+  const statusOptions = settings.reference_config?.normalized_statuses ?? [];
+  const formula = String(settings.score_settings?.score_formula ?? "");
+  const scalarScoreSettings = Object.entries(settings.score_settings ?? {}).filter(
+    ([, value]) => typeof value !== "object" || Array.isArray(value),
+  );
+  const groupedScoreSettings = Object.entries(settings.score_settings ?? {}).filter(
+    ([, value]) => value && typeof value === "object" && !Array.isArray(value),
+  );
 
   return (
-    <div>
+    <div className="settings-page">
       <div className="page-header">
         <div>
-          <Typography.Text className="hero-kicker">Local configuration</Typography.Text>
+          <Typography.Text className="hero-kicker">Application configuration</Typography.Text>
           <h1>Settings</h1>
           <Typography.Text type="secondary">
-            Configure scoring, modules, role access, reference lists, LLM checks, and maintenance actions.
+            Configure scoring, portal modules, role access, reference values, and assistant behavior.
           </Typography.Text>
         </div>
         <Space wrap>
@@ -243,7 +273,9 @@ export default function Settings() {
             loading={saving}
             onClick={() =>
               saveSettings({
+                portfolio_start_year: settings.portfolio_start_year,
                 score_settings: settings.score_settings,
+                status_mappings: settings.status_mappings,
                 feature_flags: settings.feature_flags,
                 role_permissions: settings.role_permissions,
                 assistant_system_prompt: settings.assistant_system_prompt,
@@ -256,109 +288,149 @@ export default function Settings() {
       </div>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} xl={12}>
+        <Col xs={24} xl={15}>
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Card title={<><ThunderboltOutlined /> Score Settings</>}>
-              <Space direction="vertical" style={{ width: "100%" }}>
-                {Object.entries(settings.score_settings).map(([key, value]) => {
-                  if (value && typeof value === "object" && !Array.isArray(value)) {
-                    return (
-                      <Card size="small" title={scoreLabels[key] ?? key} key={key}>
-                        <Space direction="vertical" style={{ width: "100%" }}>
-                          {Object.entries(value as Record<string, number>).map(([nestedKey, nestedValue]) => (
-                            <div className="score-setting-row" key={`${key}-${nestedKey}`}>
-                              <span>{nestedKey}</span>
-                              <InputNumber
-                                value={Number(nestedValue)}
-                                min={0}
-                                max={100}
-                                addonAfter={key.includes("weight") ? "%" : undefined}
-                                onChange={(nextValue) =>
-                                  updateNestedScoreSetting(key, nestedKey, Number(nextValue ?? 0))
-                                }
-                              />
-                            </div>
-                          ))}
-                        </Space>
-                      </Card>
-                    );
-                  }
-                  return (
-                    <div className="score-setting-row" key={key}>
-                      <span>{scoreLabels[key] ?? key}</span>
-                      <InputNumber
-                        value={Number(value)}
-                        min={0}
-                        max={100}
-                        addonAfter={key.includes("weight") || key.includes("cap") ? "%" : undefined}
-                        onChange={(nextValue) => updateScoreSetting(key, Number(nextValue ?? 0))}
-                      />
-                    </div>
-                  );
-                })}
-              </Space>
-            </Card>
-
-            <Card title={<><SettingOutlined /> LLM Connection</>}>
-              <Descriptions size="small" column={1} bordered>
-                <Descriptions.Item label="Provider">{llmConfig.provider || "Unknown"}</Descriptions.Item>
-                <Descriptions.Item label="Endpoint">{llmConfig.endpoint || "-"}</Descriptions.Item>
-                <Descriptions.Item label="API key">{llmConfig.api_key_present ? "Present" : "Missing"}</Descriptions.Item>
-                <Descriptions.Item label="Chat deployment/model">{llmConfig.chat_deployment || llmConfig.deployment || "-"}</Descriptions.Item>
-              </Descriptions>
-              <Space wrap style={{ marginTop: 14 }}>
-                <Button icon={<CheckCircleOutlined />} onClick={verifyLLM}>Verify Connection</Button>
-                <Button icon={<CheckCircleOutlined />} onClick={verifyEmbeddings}>Verify Embeddings</Button>
-              </Space>
-              {llmStatus && (
-                <Alert
-                  style={{ marginTop: 12 }}
-                  type={llmStatus.ok ? "success" : "warning"}
-                  showIcon
-                  message={llmStatus.message}
-                  description={llmStatus.checked_at}
+            <Card
+              className="settings-panel settings-panel-highlight"
+              title={<><ThunderboltOutlined /> Conference Score Management</>}
+              extra={
+                <Space wrap>
+                  <Button icon={<ReloadOutlined />} loading={recalculating} onClick={recalculateScores}>
+                    Recalculate Scores
+                  </Button>
+                  <Button
+                    type="primary"
+                    icon={<SaveOutlined />}
+                    loading={saving}
+                    onClick={() => saveSettings({ score_settings: settings.score_settings })}
+                  >
+                    Save Scoring
+                  </Button>
+                </Space>
+              }
+            >
+              <Alert
+                showIcon
+                type="info"
+                className="settings-inline-alert"
+                message="Saving scoring settings recalculates all conference scores and automatically refreshes derived conference status."
+              />
+              <div className="score-formula-box">
+                <div>
+                  <Typography.Text strong>Active Score Formula</Typography.Text>
+                  <Typography.Paragraph type="secondary">
+                    Result is clamped to 0-100. Available functions: min, max, round, abs.
+                  </Typography.Paragraph>
+                </div>
+                <Input.TextArea
+                  rows={3}
+                  value={formula}
+                  onChange={(event) => updateScoreSetting("score_formula", event.target.value)}
                 />
-              )}
-              {embeddingStatus && (
-                <Alert
-                  style={{ marginTop: 12 }}
-                  type={embeddingStatus.ok ? "success" : "warning"}
-                  showIcon
-                  message={`${embeddingStatus.provider || "Embeddings"}: ${embeddingStatus.message}`}
-                  description={`Model ${embeddingStatus.model || "-"}; endpoint ${embeddingStatus.endpoint || "-"}`}
-                />
-              )}
-              <div className="llm-test-box" style={{ marginTop: 14 }}>
-                <strong>One-shot LLM test</strong>
-                <Input.TextArea rows={3} value={llmTest} onChange={(event) => setLlmTest(event.target.value)} />
-                <Button onClick={testLLM}>Send Test Message</Button>
-                {llmTestResult && <span className="llm-response">{llmTestResult.response || llmTestResult.message}</span>}
+                <div className="formula-token-list">
+                  {formulaVariables.map((variable) => <Tag key={variable}>{variable}</Tag>)}
+                </div>
               </div>
+
+              <Row gutter={[14, 14]}>
+                {scalarScoreSettings
+                  .filter(([key]) => key !== "score_formula")
+                  .map(([key, value]) => (
+                    <Col xs={24} md={12} key={key}>
+                      <div className="score-setting-row is-carded">
+                        <span>{scoreLabels[key] ?? key}</span>
+                        <InputNumber
+                          value={Number(value)}
+                          min={0}
+                          max={key.includes("cap") ? 500 : 100}
+                          onChange={(nextValue) => updateScoreSetting(key, Number(nextValue ?? 0))}
+                        />
+                      </div>
+                    </Col>
+                  ))}
+              </Row>
+
+              <Row gutter={[14, 14]} style={{ marginTop: 14 }}>
+                {groupedScoreSettings.map(([key, value]) => (
+                  <Col xs={24} lg={12} key={key}>
+                    <Card size="small" className="settings-subcard" title={scoreLabels[key] ?? key}>
+                      <Space direction="vertical" style={{ width: "100%" }}>
+                        {Object.entries(value as Record<string, number>).map(([nestedKey, nestedValue]) => (
+                          <div className="score-setting-row" key={`${key}-${nestedKey}`}>
+                            <span>{nestedKey}</span>
+                            <InputNumber
+                              value={Number(nestedValue)}
+                              min={0}
+                              max={key === "issue_assessment_factors" ? 5 : 100}
+                              onChange={(nextValue) =>
+                                updateNestedScoreSetting(key, nestedKey, Number(nextValue ?? 0))
+                              }
+                            />
+                          </div>
+                        ))}
+                      </Space>
+                    </Card>
+                  </Col>
+                ))}
+              </Row>
             </Card>
 
-            <Card title={<><ReloadOutlined /> Maintenance</>}>
-              <Space wrap>
-                <Button icon={<ReloadOutlined />} onClick={refreshFacts}>Refresh Conference Facts</Button>
-                <Button icon={<ReloadOutlined />} onClick={recalculateMilestones}>Recalculate Milestone Dates</Button>
-              </Space>
+            <Card className="settings-panel" title={<><SafetyCertificateOutlined /> Status Mapping</>}>
+              <Typography.Paragraph type="secondary">
+                Imported status labels are normalized through these mappings before they are used by milestones, facts, and scoring.
+              </Typography.Paragraph>
+              <Table
+                size="small"
+                rowKey="source"
+                pagination={{ pageSize: 8 }}
+                dataSource={mappingRows}
+                columns={[
+                  { title: "Imported Value", dataIndex: "source", key: "source" },
+                  {
+                    title: "Normalized Value",
+                    dataIndex: "normalized",
+                    key: "normalized",
+                    width: 260,
+                    render: (value: string, row: MappingRow) => (
+                      <Select
+                        style={{ width: "100%" }}
+                        value={value}
+                        options={statusOptions.map((status) => ({ label: status, value: status }))}
+                        onChange={(nextValue) => updateStatusMapping(row.source, nextValue)}
+                      />
+                    ),
+                  },
+                ]}
+              />
             </Card>
           </Space>
         </Col>
 
-        <Col xs={24} xl={12}>
+        <Col xs={24} xl={9}>
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Card title="Assistant RAG Prompt">
-              <Input.TextArea
-                rows={8}
-                value={settings.assistant_system_prompt}
-                onChange={(event) => setSettings({ ...settings, assistant_system_prompt: event.target.value })}
-              />
+            <Card className="settings-panel" title={<><SlidersOutlined /> Portfolio Defaults</>}>
+              <div className="settings-control-row">
+                <div>
+                  <strong>Default portfolio start year</strong>
+                  <span>Used by overview filters and portfolio-level timelines.</span>
+                </div>
+                <InputNumber
+                  value={settings.portfolio_start_year}
+                  min={2000}
+                  max={2100}
+                  onChange={(value) => setSettings({ ...settings, portfolio_start_year: Number(value ?? 2020) })}
+                />
+              </div>
+              <Space wrap style={{ marginTop: 14 }}>
+                <Button icon={<ReloadOutlined />} onClick={refreshFacts}>Refresh Conference Facts</Button>
+                <Button icon={<ReloadOutlined />} onClick={recalculateMilestones}>Recalculate Milestone Dates</Button>
+              </Space>
             </Card>
 
-            <Card title="Portal Modules">
+            <Card className="settings-panel" title={<><AppstoreOutlined /> Portal Modules</>}>
               <Row gutter={[10, 10]}>
                 {Object.entries(settings.feature_flags).map(([key, enabled]) => (
-                  <Col xs={24} sm={12} key={key}>
+                  <Col xs={24} sm={12} xl={24} key={key}>
                     <div className="feature-toggle-row">
                       <strong>{featureLabels[key] ?? key}</strong>
                       <Switch
@@ -376,20 +448,18 @@ export default function Settings() {
               </Row>
             </Card>
 
-            <Card title="Embedding Service">
-              <Descriptions size="small" column={1} bordered>
-                <Descriptions.Item label="Provider">{embeddingConfig.provider || "IAV on-prem TEI"}</Descriptions.Item>
-                <Descriptions.Item label="Endpoint">{embeddingConfig.endpoint || "-"}</Descriptions.Item>
-                <Descriptions.Item label="Route">{embeddingConfig.route || "/v1/embeddings"}</Descriptions.Item>
-                <Descriptions.Item label="Model">{embeddingConfig.model || "-"}</Descriptions.Item>
-                <Descriptions.Item label="API key required">{embeddingConfig.api_key_required ? "Yes" : "No"}</Descriptions.Item>
-              </Descriptions>
+            <Card className="settings-panel" title="Assistant RAG Prompt">
+              <Input.TextArea
+                rows={9}
+                value={settings.assistant_system_prompt}
+                onChange={(event) => setSettings({ ...settings, assistant_system_prompt: event.target.value })}
+              />
             </Card>
           </Space>
         </Col>
       </Row>
 
-      <Card title="Role Access" className="section-gap">
+      <Card title="Role Access" className="section-gap settings-panel">
         <Table
           dataSource={permissionRows}
           columns={roleColumns}
@@ -402,13 +472,13 @@ export default function Settings() {
 
       <Card
         title={<><EditOutlined /> Reference Configuration</>}
-        className="section-gap"
+        className="section-gap settings-panel"
         extra={<Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={saveReferenceConfig}>Save Reference Lists</Button>}
       >
         <Alert
           showIcon
           type="info"
-          style={{ marginBottom: 16 }}
+          className="settings-inline-alert"
           message="Removing a configured value moves existing records using it to Unknown through the backend cleanup rule."
         />
         <div className="reference-config-grid">

@@ -595,7 +595,6 @@ export default function ConferenceDetail() {
             <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/conferences")}>
               Back
             </Button>
-            {statusTag(conference.conference_status)}
             <Tag color={statusColor(conference.status_band)}>{conference.status_band}</Tag>
           </Space>
           <Typography.Text className="hero-kicker">Record {recordLabel(conference.conference_number)}</Typography.Text>
