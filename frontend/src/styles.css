@@ -1098,6 +1098,24 @@ h3 {
   font-weight: 700;
 }
 
+.contact-table .ant-table-cell {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.contact-name-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.contact-name-cell strong {
+  color: var(--iav-b0);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .detail-side-card {
   border-top: 3px solid rgba(0, 145, 255, 0.55);
 }

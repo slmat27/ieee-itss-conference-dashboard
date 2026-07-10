@@ -540,15 +540,24 @@ export default function ConferenceDetail() {
   ];
 
   const contactColumns = [
-    { title: "Name", dataIndex: "name", key: "name" },
-    { title: "Email", dataIndex: "email", key: "email", render: (value: string) => value || "-" },
-    { title: "Role", dataIndex: "role", key: "role", render: (value: string) => value || "-" },
     {
-      title: "Primary",
-      dataIndex: "is_primary",
-      key: "is_primary",
-      render: (value: boolean) => (value ? <Tag color="blue">Primary</Tag> : "-"),
+      title: "Name",
+      dataIndex: "name",
+      key: "name",
+      render: (value: string, row: Contact) => (
+        <div className="contact-name-cell">
+          <strong>{value || "-"}</strong>
+          {row.is_primary && <Tag color="blue">Primary</Tag>}
+        </div>
+      ),
     },
+    {
+      title: "Email",
+      dataIndex: "email",
+      key: "email",
+      render: (value: string) => value ? <a href={`mailto:${value}`}>{value}</a> : "-",
+    },
+    { title: "Role", dataIndex: "role", key: "role", render: (value: string) => value || "-" },
     {
       title: "",
       key: "actions",
@@ -681,12 +690,12 @@ export default function ConferenceDetail() {
               }
             >
               <Table
+                className="contact-table"
                 dataSource={conference.contacts}
                 columns={contactColumns}
                 rowKey="id"
                 pagination={false}
                 size="middle"
-                scroll={{ x: 900 }}
               />
             </Card>
 
