@@ -515,13 +515,6 @@ export default function ConferenceDetail() {
       render: dateLabel,
     },
     {
-      title: "Last Update",
-      dataIndex: "last_updated",
-      key: "last_updated",
-      width: 126,
-      render: dateLabel,
-    },
-    {
       title: "",
       key: "actions",
       width: 46,
@@ -675,7 +668,7 @@ export default function ConferenceDetail() {
                 rowKey="id"
                 pagination={false}
                 size="small"
-                scroll={{ x: 650 }}
+                scroll={{ x: 560 }}
               />
             </Card>
 
