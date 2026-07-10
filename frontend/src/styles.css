@@ -713,7 +713,7 @@ h3 {
   border-top-color: #28a000;
 }
 
-.overview-metric-card.is-finance {
+.overview-metric-card.is-health {
   border-top-color: #ff9000;
 }
 
@@ -811,12 +811,11 @@ h3 {
 }
 
 .overview-chart-legend-label {
-  overflow: hidden;
   color: var(--iav-b0);
   font-size: 13px;
   font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .overview-chart-legend-value {
@@ -949,6 +948,17 @@ h3 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+}
+
+.flagship-status-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.flagship-status-stack .ant-tag {
+  max-width: 128px;
 }
 
 .flagship-modern-title {
@@ -1160,6 +1170,30 @@ h3 {
   font-size: 30px;
   font-weight: 900;
   line-height: 1.1;
+}
+
+.derived-status-note {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  padding: 12px;
+  background: #f8fbff;
+  border: 1px solid rgba(0, 26, 84, 0.1);
+  border-radius: 8px;
+}
+
+.derived-status-note span,
+.derived-status-note .ant-typography {
+  grid-column: 1 / -1;
+  color: var(--iav-g4);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.derived-status-note strong {
+  color: var(--iav-b0);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .table-link {
@@ -1488,6 +1522,14 @@ h3 {
 .ant-tag {
   border-radius: 999px;
   font-weight: 600;
+}
+
+.status-tag-wrap.ant-tag {
+  max-width: 100%;
+  margin-inline-end: 0;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1100px) {

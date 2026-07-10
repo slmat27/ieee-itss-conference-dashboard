@@ -1,8 +1,6 @@
 import {
-  ArrowDownOutlined,
   ArrowLeftOutlined,
   ArrowRightOutlined,
-  ArrowUpOutlined,
   BankOutlined,
   CalendarOutlined,
   CloudUploadOutlined,
@@ -28,6 +26,12 @@ const STATUS_COLORS: Record<string, string> = {
   "attention needed": "#ff9000",
   "at risk": "#ff7a45",
   critical: "#ff4d4f",
+  blocked: "#ff4d4f",
+  "not started": "#696969",
+  "in progress": "#0091ff",
+  complete: "#28a000",
+  closed: "#696969",
+  cancelled: "#696969",
   active: "#28a000",
   planning: "#0091ff",
   completed: "#696969",
@@ -149,7 +153,9 @@ function laneWindow(cards: any[], start: number) {
 }
 
 function ConferenceCarouselCard({ card, onOpen }: { card: any; onOpen: () => void }) {
-  const status = card.status ?? card.status_band ?? card.conference_status;
+  const status = card.conference_status ?? card.status ?? "Status pending";
+  const health = card.status_band ?? "Health pending";
+  const showHealth = String(health).trim().toLowerCase() !== String(status).trim().toLowerCase();
   const sponsorship = card.sponsorship_type || "Sponsorship not set";
   const borderColor = sponsorshipColor(sponsorship);
 
@@ -160,7 +166,10 @@ function ConferenceCarouselCard({ card, onOpen }: { card: any; onOpen: () => voi
       onClick={onOpen}
     >
       <div className="flagship-modern-head">
-        <Tag color={statusColor(status)}>{status || "Status pending"}</Tag>
+        <div className="flagship-status-stack">
+          <Tag className="status-tag-wrap" color={statusColor(status)}>{status}</Tag>
+          {showHealth && <Tag className="status-tag-wrap" color={statusColor(health)}>{health}</Tag>}
+        </div>
         <Progress
           type="circle"
           percent={scoreLabel(card.score)}
@@ -175,6 +184,9 @@ function ConferenceCarouselCard({ card, onOpen }: { card: any; onOpen: () => voi
         <span>Record {formatRecordNumber(card.conference_number)}</span>
       </div>
       <div className="flagship-modern-meta">
+        <span>
+          <SafetyCertificateOutlined /> {card.lifecycle_phase || "Lifecycle not set"}
+        </span>
         <span>
           <CalendarOutlined /> {formatDateRange(card)}
         </span>
@@ -248,6 +260,13 @@ export default function Overview() {
 
   const statusData = Object.entries(summary?.status_counts ?? {}).map(([name, value]) => ({ name, value }));
   const phaseData = Object.entries(summary?.phase_counts ?? {}).map(([name, value]) => ({ name, value }));
+  const healthCounts = summary?.health_counts ?? {};
+  const watchlistCount =
+    (healthCounts["Attention Needed"] ?? 0) +
+    (healthCounts["At Risk"] ?? 0) +
+    (healthCounts.Critical ?? 0) +
+    (healthCounts.Blocked ?? 0);
+  const onTrackCount = healthCounts["On Track"] ?? 0;
   const financiallySponsoredEvents = useMemo(
     () =>
       conferences
@@ -405,35 +424,29 @@ export default function Overview() {
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} xl={6}>
           <Card className="overview-metric-card">
-            <Statistic title="Total Conferences" value={summary.conference_count} prefix={<BankOutlined />} />
+            <Statistic title="Portfolio Records" value={summary.conference_count} prefix={<BankOutlined />} />
           </Card>
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <Card className="overview-metric-card is-alert">
-            <Statistic title="Open Issues" value={summary.open_issue_count} prefix={<ExclamationCircleOutlined />} />
+            <Statistic title="Watchlist Conferences" value={watchlistCount} prefix={<ExclamationCircleOutlined />} />
           </Card>
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <Card className="overview-metric-card is-score">
-            <Statistic title="Average Score" value={summary.average_score} precision={1} prefix={<TrophyOutlined />} suffix="/100" />
+            <Statistic title="Average Progress Score" value={summary.average_score} precision={1} prefix={<TrophyOutlined />} suffix="/100" />
           </Card>
         </Col>
         <Col xs={24} sm={12} xl={6}>
-          <Card className="overview-metric-card is-finance">
-            <Statistic
-              title="Avg Surplus %"
-              value={summary.average_surplus_percentage}
-              precision={1}
-              prefix={(summary.average_surplus_percentage ?? 0) >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-              suffix="%"
-            />
+          <Card className="overview-metric-card is-health">
+            <Statistic title="On-Track Conferences" value={onTrackCount} prefix={<SafetyCertificateOutlined />} />
           </Card>
         </Col>
       </Row>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card className="overview-chart-card" title={<><PieChartOutlined /> Status Mix</>}>
+          <Card className="overview-chart-card" title={<><PieChartOutlined /> Conference Status</>}>
             {statusData.length > 0 ? (
               <div className="overview-chart-shell">
                 <div className="overview-donut-wrap">
@@ -479,7 +492,7 @@ export default function Overview() {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card className="overview-chart-card" title={<><PieChartOutlined /> Lifecycle Phases</>}>
+          <Card className="overview-chart-card" title={<><PieChartOutlined /> Conference Lifecycle</>}>
             {phaseData.length > 0 ? (
               <div className="overview-chart-shell">
                 <div className="overview-donut-wrap">

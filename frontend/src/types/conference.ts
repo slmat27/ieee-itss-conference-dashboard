@@ -136,6 +136,7 @@ export interface ConferenceSummary {
   average_score: number;
   average_surplus_percentage: number;
   status_counts: Record<string, number>;
+  health_counts?: Record<string, number>;
   phase_counts: Record<string, number>;
   flagship_cards: any[];
   flagship_groups: any[];

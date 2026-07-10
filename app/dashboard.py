@@ -14,7 +14,7 @@ import ast
 import math
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -129,6 +129,18 @@ REVIEW_ASSESSMENTS = [
     "Needs Follow-up",
     "Not an Issue",
 ]
+DERIVED_CONFERENCE_STATUSES = [
+    "Not Started",
+    "In Progress",
+    "On Track",
+    "Attention Needed",
+    "At Risk",
+    "Critical",
+    "Blocked",
+    "Complete",
+    "Closed",
+    "Cancelled",
+]
 SCORE_WEIGHTS = {
     "Governance and Approvals": 20.0,
     "Finance and Banking": 20.0,
@@ -141,6 +153,7 @@ REFERENCE_CONFIG_DEFAULTS = {
     "committee_members": ["Ahmed Hussein", "Daniel Medina"],
     "conference_series": [{"code": code, "name": name, "flagship": flagship} for code, name, flagship in CONFERENCE_SERIES],
     "lifecycle_phases": LIFECYCLE_PHASES,
+    "conference_statuses": DERIVED_CONFERENCE_STATUSES,
     "normalized_statuses": NORMALIZED_STATUSES,
     "sponsorship_types": SPONSORSHIP_TYPES,
     "contact_roles": CONTACT_ROLES,
@@ -152,6 +165,7 @@ REFERENCE_CONFIG_LABELS = {
     "committee_members": "ITSS Committee Members",
     "conference_series": "Conference Series",
     "lifecycle_phases": "Lifecycle Phases",
+    "conference_statuses": "Conference Status Values",
     "normalized_statuses": "Status Values",
     "sponsorship_types": "Sponsorship Types",
     "contact_roles": "Contact Roles",
@@ -227,8 +241,12 @@ def load_local_env(root: Path | None = None) -> None:
             os.environ[key] = value
 
 
+APP_ROOT = Path(__file__).resolve().parents[1]
+
+
 def app_path(env_name: str, default: str) -> Path:
-    return Path(os.environ.get(env_name, default)).expanduser()
+    path = Path(os.environ.get(env_name, default)).expanduser()
+    return path if path.is_absolute() else APP_ROOT / path
 
 
 class Base(DeclarativeBase):
@@ -578,7 +596,7 @@ def init_dashboard() -> DashboardState:
         directory.mkdir(parents=True, exist_ok=True)
     db_path = app_path("APP_DATABASE_PATH", "./data/itss_dashboard.db")
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}", future=True)
     Base.metadata.create_all(engine)
     ensure_database_schema(engine)
     factory = sessionmaker(engine, expire_on_commit=False, future=True)
@@ -586,6 +604,8 @@ def init_dashboard() -> DashboardState:
     _state = state
     with factory() as session:
         seed_configuration(session)
+        for conference in session.scalars(select(Conference)):
+            recalculate(conference, session, record_history=False)
         session.commit()
     return state
 
@@ -675,8 +695,13 @@ def sanitize_reference_config(raw: dict[str, Any] | None = None) -> dict[str, An
             if text and text not in seen:
                 seen.add(text)
                 items.append(text)
-        if key != "review_assessments" and "Unknown" not in seen:
+        if key not in {"conference_statuses", "review_assessments"} and "Unknown" not in seen:
             items.insert(0, "Unknown")
+        if key == "conference_statuses":
+            items = [item for item in items if item != "Unknown"]
+            for required in DERIVED_CONFERENCE_STATUSES:
+                if required not in items:
+                    items.append(required)
         if key == "normalized_statuses":
             for required in ("Unknown", "Open", "Resolved", "Closed", "Complete", "Approved"):
                 if required not in items:
@@ -822,7 +847,7 @@ def seed_configuration(session: Session) -> None:
                     enabled=True,
                 )
             )
-    for status in NORMALIZED_STATUSES:
+    for status in REFERENCE_CONFIG_DEFAULTS["normalized_statuses"]:
         if not session.scalar(select(StatusMapping).where(StatusMapping.source_value == status)):
             session.add(StatusMapping(source_value=status, normalized_value=status))
     if not session.get(DashboardSettings, "score_weights"):
@@ -1183,6 +1208,8 @@ def status_band(score: float, completeness: float, conference_status: str) -> st
         return "Cancelled"
     if conference_status == "Closed":
         return "Closed"
+    if conference_status in {"Blocked", "Critical", "At Risk", "Attention Needed", "On Track"}:
+        return conference_status
     if completeness < 35:
         return "Provisional"
     if score >= 85:
@@ -1206,15 +1233,127 @@ def sync_conference_facts_from_milestones(conference: Conference) -> None:
     publication_statuses = [statuses[code] for code in ("CFP", "REVIEWS", "PROCEEDINGS") if code in statuses]
     if publication_statuses:
         conference.publication_status = aggregate_status(publication_statuses)
-    if conference.conference_status == "Unknown":
-        conference.conference_status = aggregate_status(
-            [
-                conference.application_status,
-                conference.mou_status,
-                conference.finance_status,
-                conference.publication_status,
-            ]
-        )
+
+
+COMPLETE_STATUSES = {"Approved", "Complete", "Published", "Closed", "Not Applicable"}
+ACTIVE_STATUSES = {"In Progress", "Submitted", "Awaiting IEEE", "Awaiting Conference", "Awaiting External Party"}
+BLOCKED_STATUSES = {"Blocked", "Rejected"}
+IGNORED_STATUSES = {"Cancelled", "Not Applicable"}
+
+
+def milestone_is_complete(milestone: ConferenceMilestone) -> bool:
+    return normalize_status(milestone.status) in COMPLETE_STATUSES
+
+
+def milestone_is_actionable(milestone: ConferenceMilestone) -> bool:
+    return normalize_status(milestone.status) not in IGNORED_STATUSES
+
+
+def milestone_stats(conference: Conference) -> dict[str, Any]:
+    today = date.today()
+    milestones = [m for m in conference.milestones if milestone_is_actionable(m)]
+    total = len(milestones)
+    completed = [m for m in milestones if milestone_is_complete(m)]
+    active = [m for m in milestones if normalize_status(m.status) in ACTIVE_STATUSES]
+    blocked = [m for m in milestones if normalize_status(m.status) in BLOCKED_STATUSES]
+    unfinished = [m for m in milestones if not milestone_is_complete(m)]
+    overdue = [m for m in unfinished if m.due_date and m.due_date < today]
+    due_soon = [m for m in unfinished if m.due_date and today <= m.due_date <= today + timedelta(days=30)]
+    max_overdue_days = max(((today - m.due_date).days for m in overdue if m.due_date), default=0)
+    completion_pct = (len(completed) / total) * 100 if total else 0.0
+    return {
+        "total": total,
+        "completed": completed,
+        "active": active,
+        "blocked": blocked,
+        "unfinished": unfinished,
+        "overdue": overdue,
+        "due_soon": due_soon,
+        "max_overdue_days": max_overdue_days,
+        "completion_pct": completion_pct,
+    }
+
+
+def milestone_code_status(conference: Conference, code: str) -> str:
+    for milestone in conference.milestones:
+        if milestone.definition.code == code:
+            return normalize_status(milestone.status)
+    return "Unknown"
+
+
+def milestone_code_complete(conference: Conference, code: str) -> bool:
+    return milestone_code_status(conference, code) in COMPLETE_STATUSES
+
+
+def milestone_code_started(conference: Conference, code: str) -> bool:
+    return milestone_code_status(conference, code) in COMPLETE_STATUSES | ACTIVE_STATUSES | BLOCKED_STATUSES
+
+
+def phase_for_milestone_code(code: str) -> str:
+    if code in {"APPLICATION", "MOU"}:
+        return "IEEE Application and MOU"
+    if code in {"BUDGET", "BANKING", "CFP", "VENUE"}:
+        return "Detailed Planning"
+    if code == "REVIEWS":
+        return "Submission and Review"
+    if code == "REGISTRATION":
+        return "Registration and Final Preparation"
+    if code == "PROCEEDINGS":
+        return "Proceedings Processing"
+    if code == "FIN_CLOSE":
+        return "Financial and Administrative Closure"
+    return "Detailed Planning"
+
+
+def derive_lifecycle_phase(conference: Conference) -> str:
+    today = date.today()
+    stats = milestone_stats(conference)
+    unfinished = sorted(
+        stats["unfinished"],
+        key=lambda item: (item.due_date or date.max, item.definition.due_days_from_start, item.definition.code),
+    )
+    if conference.end_date and conference.end_date < today:
+        if milestone_code_complete(conference, "FIN_CLOSE") and milestone_code_complete(conference, "PROCEEDINGS"):
+            return "Closed"
+        if not milestone_code_complete(conference, "PROCEEDINGS"):
+            return "Proceedings Processing"
+        return "Financial and Administrative Closure"
+    if conference.start_date and conference.end_date and conference.start_date <= today <= conference.end_date:
+        return "Conference Delivery"
+    if conference.start_date and 0 <= (conference.start_date - today).days <= 30:
+        return "Registration and Final Preparation"
+    if unfinished:
+        return phase_for_milestone_code(unfinished[0].definition.code)
+    if stats["total"] and stats["completion_pct"] >= 100:
+        return "Closed" if conference.end_date and conference.end_date < today else "Conference Delivery"
+    if milestone_code_started(conference, "APPLICATION") or milestone_code_started(conference, "MOU"):
+        return "IEEE Application and MOU"
+    return "Expression of Interest"
+
+
+def derive_conference_status(conference: Conference, score: float, lifecycle_phase: str) -> str:
+    stats = milestone_stats(conference)
+    if lifecycle_phase == "Closed":
+        return "Closed"
+    if stats["blocked"]:
+        return "Blocked"
+    if stats["total"] and stats["completion_pct"] >= 100:
+        return "Complete"
+    if stats["overdue"]:
+        if stats["max_overdue_days"] >= 60 or len(stats["overdue"]) >= 3 or score < 50:
+            return "Critical"
+        if stats["max_overdue_days"] >= 14 or len(stats["overdue"]) >= 2 or score < 70:
+            return "At Risk"
+        return "Attention Needed"
+    if score < 50:
+        return "Critical"
+    if score < 70:
+        return "At Risk"
+    if stats["due_soon"] or score < 85:
+        return "Attention Needed"
+    if stats["active"] or stats["completion_pct"] > 0:
+        return "On Track"
+    return "Not Started"
 
 
 def aggregate_status(statuses: list[str]) -> str:
@@ -1258,18 +1397,12 @@ def aggregate_finance_status(statuses: dict[str, str]) -> str:
     return aggregate_status(finance_statuses)
 
 
-def recalculate(conference: Conference, session: Session) -> None:
+def recalculate(conference: Conference, session: Session, *, record_history: bool = True) -> None:
     settings = score_settings(session)
     weights = settings.get("dimension_weights", SCORE_WEIGHTS)
-    conference.suggested_phase = suggest_phase(conference)
-    if conference.suggested_phase not in allowed_reference_values(session, "lifecycle_phases"):
-        conference.suggested_phase = "Unknown"
-    if not conference.phase_override:
-        conference.lifecycle_phase = conference.suggested_phase
-    elif conference.lifecycle_phase not in allowed_reference_values(session, "lifecycle_phases"):
-        conference.lifecycle_phase = "Unknown"
     ensure_milestones(conference, session)
     session.flush()
+    sync_conference_facts_from_milestones(conference)
     dimension_totals: dict[str, float] = {}
     dimension_weights: dict[str, float] = {}
     step_days = float(settings.get("lateness_step_days", 30.0))
@@ -1299,20 +1432,33 @@ def recalculate(conference: Conference, session: Session) -> None:
         for name in dimension_totals
         if dimension_weights.get(name)
     }
+    derived_phase = derive_lifecycle_phase(conference)
+    allowed_phases = allowed_reference_values(session, "lifecycle_phases")
+    if derived_phase not in allowed_phases:
+        derived_phase = "Unknown"
+    derived_status = derive_conference_status(conference, score, derived_phase)
+    allowed_statuses = allowed_reference_values(session, "conference_statuses")
+    if derived_status not in allowed_statuses:
+        derived_status = "Unknown"
     conference.base_score = base
     conference.issue_penalty = penalty
     conference.score = score
     conference.data_completeness = completeness
-    conference.status_band = status_band(score, completeness, conference.conference_status)
+    conference.suggested_phase = derived_phase
+    conference.lifecycle_phase = derived_phase
+    conference.phase_override = False
+    conference.conference_status = derived_status
+    conference.status_band = status_band(score, completeness, derived_status)
     conference.score_details_json = json.dumps({"milestones": details, "dimension_scores": dimension_scores})
-    session.add(
-        ScoreHistory(
-            conference_id=conference.id,
-            score=score,
-            data_completeness=completeness,
-            dimension_scores_json=json.dumps(dimension_scores),
+    if record_history:
+        session.add(
+            ScoreHistory(
+                conference_id=conference.id,
+                score=score,
+                data_completeness=completeness,
+                dimension_scores_json=json.dumps(dimension_scores),
+            )
         )
-    )
 
 
 def detect_issues(conference: Conference, session: Session) -> None:
@@ -1476,6 +1622,7 @@ class ConferenceCommentIn(BaseModel):
 
 class MilestoneUpdate(BaseModel):
     status: str
+    due_date: date | None = None
     comments: str | None = None
 
     @field_validator("status")
@@ -1682,6 +1829,7 @@ def enforce_reference_config(session: Session, config: dict[str, Any]) -> dict[s
         return set(config.get(key, []))
 
     phase_allowed = allowed("lifecycle_phases")
+    conference_status_allowed = allowed("conference_statuses")
     status_allowed = allowed("normalized_statuses")
     sponsorship_allowed = allowed("sponsorship_types")
     contact_role_allowed = allowed("contact_roles")
@@ -1704,7 +1852,7 @@ def enforce_reference_config(session: Session, config: dict[str, Any]) -> dict[s
             "suggested_phase": phase_allowed,
             "sponsorship_type": sponsorship_allowed,
             "conference_series": series_allowed,
-            "conference_status": status_allowed,
+            "conference_status": conference_status_allowed,
             "application_status": status_allowed,
             "mou_status": status_allowed,
             "finance_status": status_allowed,
@@ -1807,7 +1955,8 @@ def dashboard_summary(session: Session = Depends(get_session)) -> dict[str, Any]
         "critical_issue_count": sum(1 for item in issues if item.severity == "Critical"),
         "average_score": round(sum(c.score for c in conferences) / len(conferences), 1) if conferences else 0,
         "average_surplus_percentage": round(sum(surplus_pcts) / len(surplus_pcts), 1) if surplus_pcts else None,
-        "status_counts": dict(Counter(c.status_band for c in conferences)),
+        "status_counts": dict(Counter(c.conference_status for c in conferences)),
+        "health_counts": dict(Counter(c.status_band for c in conferences)),
         "phase_counts": dict(Counter(c.lifecycle_phase for c in conferences)),
         "flagship_cards": flagship_cards,
         "flagship_groups": flagship_groups,
@@ -1900,8 +2049,8 @@ def create_conference(payload: ConferenceIn, session: Session = Depends(get_sess
         sponsorship_type=configured_value(session, "sponsorship_types", payload.sponsorship_type),
         parent_conference_id=payload.parent_conference_id,
         lifecycle_phase=configured_value(session, "lifecycle_phases", payload.lifecycle_phase),
-        phase_override=True,
-        conference_status=configured_value(session, "normalized_statuses", payload.conference_status),
+        phase_override=False,
+        conference_status="Unknown",
         start_date=payload.start_date,
         end_date=payload.end_date,
         submission_deadline=payload.submission_deadline,
@@ -1944,17 +2093,17 @@ def update_conference(conference_id: str, payload: ConferenceUpdate, session: Se
     conference = require_conference(session, conference_id)
     data = payload.model_dump(exclude_unset=True)
     comment = data.pop("change_comment", None)
-    reference_fields = {
-        "lifecycle_phase": "lifecycle_phases",
-        "conference_status": "normalized_statuses",
-        "application_status": "normalized_statuses",
-        "mou_status": "normalized_statuses",
-        "finance_status": "normalized_statuses",
-        "publication_status": "normalized_statuses",
-    }
+    for derived_field in (
+        "conference_status",
+        "lifecycle_phase",
+        "phase_override",
+        "application_status",
+        "mou_status",
+        "finance_status",
+        "publication_status",
+    ):
+        data.pop(derived_field, None)
     for field, value in data.items():
-        if field in reference_fields:
-            value = configured_value(session, reference_fields[field], value)
         old = getattr(conference, field)
         if old != value:
             setattr(conference, field, value)
@@ -1998,6 +2147,8 @@ def update_conference_milestone(conference_id: str, milestone_id: str, payload: 
     if not milestone or milestone.conference_id != conference.id:
         raise HTTPException(404, "Unknown conference milestone.")
     milestone.status = configured_value(session, "normalized_statuses", payload.status)
+    if "due_date" in payload.model_fields_set:
+        milestone.due_date = payload.due_date
     milestone.comments = payload.comments
     milestone.manual_override = True
     milestone.last_updated = now()

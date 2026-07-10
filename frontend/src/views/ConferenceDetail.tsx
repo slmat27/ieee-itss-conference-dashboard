@@ -123,7 +123,7 @@ function emptyToNull(value: unknown) {
 }
 
 function statusTag(value?: string | null) {
-  return <Tag color={statusColor(value)}>{value || "Unknown"}</Tag>;
+  return <Tag className="status-tag-wrap" color={statusColor(value)}>{value || "Unknown"}</Tag>;
 }
 
 function fact(label: string, value: ReactNode) {
@@ -171,7 +171,6 @@ export default function ConferenceDetail() {
     "Blocked",
     "Not Applicable",
   ];
-  const phaseOptions = settings?.reference_config?.lifecycle_phases ?? [];
   const contactRoleOptions = settings?.reference_config?.contact_roles ?? [
     "General Chair",
     "Program Chair",
@@ -252,8 +251,6 @@ export default function ConferenceDetail() {
     factForm.setFieldsValue({
       official_title: conference.official_title,
       conference_number: recordLabel(conference.conference_number),
-      conference_status: conference.conference_status,
-      lifecycle_phase: conference.lifecycle_phase,
       start_date: conference.start_date ?? "",
       end_date: conference.end_date ?? "",
       city: conference.city ?? "",
@@ -261,10 +258,6 @@ export default function ConferenceDetail() {
       website: conference.website ?? "",
       estimated_attendees: conference.estimated_attendees ?? undefined,
       actual_attendees: conference.actual_attendees ?? undefined,
-      application_status: conference.application_status ?? "Unknown",
-      mou_status: conference.mou_status ?? "Unknown",
-      finance_status: conference.finance_status ?? "Unknown",
-      publication_status: conference.publication_status ?? "Unknown",
       total_income_current: conference.total_income_current ?? undefined,
       total_expense_current: conference.total_expense_current ?? undefined,
       budgeted_income_total: conference.budgeted_income_total ?? undefined,
@@ -329,6 +322,7 @@ export default function ConferenceDetail() {
     setActiveMilestone(milestone);
     milestoneForm.setFieldsValue({
       status: milestone.status,
+      due_date: milestone.due_date ?? "",
       comments: milestone.comments ?? "",
     });
     setMilestoneOpen(true);
@@ -342,7 +336,11 @@ export default function ConferenceDetail() {
       const updated = await api<Conference>(`/conferences/${id}/milestones/${activeMilestone.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: values.status, comments: emptyToNull(values.comments) }),
+        body: JSON.stringify({
+          status: values.status,
+          due_date: emptyToNull(values.due_date),
+          comments: emptyToNull(values.comments),
+        }),
       });
       setConference(updated);
       setMilestoneOpen(false);
@@ -818,16 +816,6 @@ export default function ConferenceDetail() {
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="conference_status" label="Conference Status">
-                <Select options={statusOptions.map((value) => ({ label: value, value }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
-              <Form.Item name="lifecycle_phase" label="Lifecycle Phase">
-                <Select options={phaseOptions.map((value) => ({ label: value, value }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
               <Form.Item name="start_date" label="Start Date">
                 <Input type="date" />
               </Form.Item>
@@ -862,25 +850,15 @@ export default function ConferenceDetail() {
                 <InputNumber min={0} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={6}>
-              <Form.Item name="application_status" label="Application">
-                <Select options={statusOptions.map((value) => ({ label: value, value }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={6}>
-              <Form.Item name="mou_status" label="MOU">
-                <Select options={statusOptions.map((value) => ({ label: value, value }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={6}>
-              <Form.Item name="finance_status" label="Finance">
-                <Select options={statusOptions.map((value) => ({ label: value, value }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={6}>
-              <Form.Item name="publication_status" label="Publication">
-                <Select options={statusOptions.map((value) => ({ label: value, value }))} />
-              </Form.Item>
+            <Col xs={24}>
+              <div className="derived-status-note">
+                <span>Derived from milestones</span>
+                <strong>Conference Status: {conference.conference_status}</strong>
+                <strong>Lifecycle Phase: {conference.lifecycle_phase}</strong>
+                <Typography.Text type="secondary">
+                  Update milestone progress and due dates to change these values.
+                </Typography.Text>
+              </div>
             </Col>
             <Col xs={24} md={12}>
               <Form.Item name="budgeted_income_total" label="Budget Income">
@@ -938,11 +916,14 @@ export default function ConferenceDetail() {
           <Form.Item name="status" label="Status" rules={[{ required: true }]}>
             <Select className="milestone-status-select" options={statusOptions.map((value) => ({ label: value, value }))} />
           </Form.Item>
+          <Form.Item name="due_date" label="Due Date">
+            <Input type="date" />
+          </Form.Item>
           <Form.Item name="comments" label="Milestone Notes">
             <Input.TextArea rows={4} />
           </Form.Item>
           <Typography.Text type="secondary">
-            Due date: {dateLabel(activeMilestone?.due_date)} · Last update: {dateTimeLabel(activeMilestone?.last_updated)}
+            Last update: {dateTimeLabel(activeMilestone?.last_updated)}
           </Typography.Text>
         </Form>
       </Modal>
