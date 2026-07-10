@@ -5,11 +5,19 @@ export interface Milestone {
   conference_id: string;
   milestone_type: string;
   display_name: string;
+  code?: string;
+  name?: string;
+  dimension?: string;
   description?: string | null;
   planned_date?: string | null;
   actual_date?: string | null;
   calculated_date?: string | null;
   status: string;
+  due_date?: string | null;
+  completed_date?: string | null;
+  manual_override?: boolean;
+  comments?: string | null;
+  last_updated?: string;
   due_date_source?: string | null;
   responsible_party?: string | null;
   notes?: string | null;
@@ -26,7 +34,9 @@ export interface Contact {
   email?: string | null;
   role?: string | null;
   organization?: string | null;
+  phone?: string | null;
   is_primary: boolean;
+  active?: boolean;
   notes?: string | null;
 }
 
@@ -34,8 +44,10 @@ export interface Comment {
   id: string;
   conference_id: string;
   author: string;
-  text: string;
+  text?: string;
+  comment?: string;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Issue {
