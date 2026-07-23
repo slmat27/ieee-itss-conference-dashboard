@@ -114,6 +114,7 @@ export default function Imports() {
   const [batchId, setBatchId] = useState<string | null>(null);
   const [selected, setSelected] = useState<SelectionMap>({});
   const [milestonesApproved, setMilestonesApproved] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
 
   const selectedCount = useMemo(
     () => Object.keys(selected).length + (milestonesApproved ? 1 : 0),
@@ -141,6 +142,7 @@ export default function Imports() {
     setBatchId(null);
     setSelected({});
     setMilestonesApproved(false);
+    setApplyError(null);
     try {
       const formData = new FormData();
       formData.append("file", file.originFileObj);
@@ -160,6 +162,7 @@ export default function Imports() {
 
   const approveRecommended = () => {
     if (!preview) return;
+    setApplyError(null);
     const next: SelectionMap = {};
     preview.rows.forEach((row) => {
       const fields = selectableFields(row);
@@ -175,6 +178,7 @@ export default function Imports() {
   const rejectAll = () => {
     setSelected({});
     setMilestonesApproved(false);
+    setApplyError(null);
   };
 
   const toggleRow = (row: ImportRow, checked: boolean) => {
@@ -207,8 +211,16 @@ export default function Imports() {
 
   const handleApply = async () => {
     const file = fileList[0];
-    if (!file?.originFileObj || !preview) return;
+    if (!file?.originFileObj || !preview) {
+      message.warning("Validate an import file before applying changes");
+      return;
+    }
+    if (!selectedCount) {
+      message.warning("Approve at least one changed row or milestone first");
+      return;
+    }
     setApplying(true);
+    setApplyError(null);
     try {
       const formData = new FormData();
       formData.append("file", file.originFileObj);
@@ -221,9 +233,13 @@ export default function Imports() {
       });
       setResult(data);
       setBatchId(data.batch_id);
-      message.success(`${data.applied_rows + data.milestone_applied} approved records applied`);
+      setSelected({});
+      setMilestonesApproved(false);
+      message.success(`${data.applied_rows + data.milestone_applied} approved records applied to the database`);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Import failed");
+      const detail = err instanceof Error ? err.message : "Import failed";
+      setApplyError(detail);
+      message.error(detail);
     } finally {
       setApplying(false);
     }
@@ -398,6 +414,22 @@ export default function Imports() {
                   Rollback Last Import
                 </Button>
               </Space>
+              {result && (
+                <Alert
+                  type="success"
+                  showIcon
+                  message="Approved changes were applied"
+                  description={`${result.applied_rows} conference rows and ${result.milestone_applied} milestone rows were saved to the database. ${result.skipped_rows} rows were skipped.`}
+                />
+              )}
+              {applyError && (
+                <Alert
+                  type="error"
+                  showIcon
+                  message="Approved changes were not applied"
+                  description={applyError}
+                />
+              )}
             </Space>
           </Card>
         </Col>

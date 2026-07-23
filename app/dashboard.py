@@ -21,6 +21,7 @@ from typing import Any
 import pandas as pd
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, Response
 from openai import AzureOpenAI
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -474,6 +475,7 @@ class ImportBatch(Base):
     conflict_count: Mapped[int] = mapped_column(Integer, default=0)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     preview_json: Mapped[str] = mapped_column(Text, default="{}")
+    file_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
 
 class FieldChange(Base):
@@ -654,6 +656,10 @@ def ensure_database_schema(engine: Any) -> None:
             template_columns = {column["name"] for column in inspector.get_columns("template_files")}
             if "file_data" not in template_columns:
                 connection.exec_driver_sql("ALTER TABLE template_files ADD COLUMN file_data BLOB")
+        if "import_batches" in table_names:
+            import_columns = {column["name"] for column in inspector.get_columns("import_batches")}
+            if "file_data" not in import_columns:
+                connection.exec_driver_sql("ALTER TABLE import_batches ADD COLUMN file_data BLOB")
 
 
 def get_state() -> DashboardState:
@@ -2732,7 +2738,8 @@ async def apply_import(file: UploadFile = File(...), selected_changes_json: str 
         unchanged_count=preview["summary"]["unchanged"],
         conflict_count=preview["summary"]["conflicts"],
         import_status="Applied",
-        preview_json=json.dumps(preview),
+        preview_json=json.dumps(jsonable_encoder(preview)),
+        file_data=data,
     )
     session.add(batch)
     selected = json.loads(selected_changes_json) if selected_changes_json else None
@@ -2792,9 +2799,6 @@ async def apply_import(file: UploadFile = File(...), selected_changes_json: str 
     if applied == 0 and milestone_applied == 0:
         session.rollback()
         raise HTTPException(409, "Select at least one valid new or changed row before applying changes.")
-    if applied > 0 or milestone_applied > 0:
-        import_path = app_path("APP_IMPORT_PATH", "./data/imports") / f"{batch.id}-{safe_filename(file.filename or 'upload')}"
-        import_path.write_bytes(data)
     session.commit()
     return {"batch_id": batch.id, "applied_rows": applied, "milestone_applied": milestone_applied, "skipped_rows": skipped, "summary": preview["summary"]}
 

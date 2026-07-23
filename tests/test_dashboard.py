@@ -196,6 +196,41 @@ def test_import_applies_selected_valid_fields_when_other_fields_have_errors(tmp_
         assert conferences[0]["end_date"] is None
 
 
+def test_import_apply_serializes_date_changes_in_batch_preview(tmp_path: Path, monkeypatch) -> None:
+    with _client(tmp_path, monkeypatch) as client:
+        created = client.post(
+            "/api/conferences",
+            json={
+                "conference_number": "98766",
+                "acronym": "IV",
+                "year": 2029,
+                "official_title": "IEEE IV Date Import Test",
+                "conference_series": "IV",
+                "sponsorship_type": "Flagship",
+                "lifecycle_phase": "Expression of Interest",
+            },
+        )
+        assert created.status_code == 201
+
+        csv_text = (
+            "conference_number,acronym,year,official_title,conference_series,sponsorship_type,lifecycle_phase,"
+            "start_date,end_date\n"
+            "98766,IV,2029,IEEE IV Date Import Test,IV,Flagship,Expression of Interest,"
+            "2029-06-18,2029-06-21\n"
+        )
+        applied = client.post(
+            "/api/imports/apply",
+            data={"selected_changes_json": json.dumps({"2": ["start_date", "end_date"]})},
+            files={"file": ("portfolio.csv", csv_text.encode("utf-8"), "text/csv")},
+        )
+
+        assert applied.status_code == 200
+        assert applied.json()["applied_rows"] == 1
+        conference = client.get("/api/conferences", params={"q": "98766"}).json()["items"][0]
+        assert conference["start_date"] == "2029-06-18"
+        assert conference["end_date"] == "2029-06-21"
+
+
 def test_document_upload_indexes_text_and_chat_retrieves_it(tmp_path: Path, monkeypatch) -> None:
     with _client(tmp_path, monkeypatch) as client:
         upload = client.post(

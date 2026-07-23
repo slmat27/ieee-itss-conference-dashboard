@@ -18,13 +18,15 @@ export async function api<T = any>(
 
   if (!response.ok) {
     let detail = `Request failed with status ${response.status}.`;
+    const text = await response.text();
     try {
-      const payload = await response.json();
+      const payload = JSON.parse(text);
       if (typeof payload.detail === "string" && payload.detail.trim()) {
         detail = payload.detail;
       }
     } catch {
-      // ignore parse errors
+      const fallback = text.trim() || response.statusText.trim();
+      if (fallback) detail = fallback;
     }
     throw new Error(detail);
   }
