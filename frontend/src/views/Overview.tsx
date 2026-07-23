@@ -8,6 +8,7 @@ import {
   ExclamationCircleOutlined,
   LoadingOutlined,
   PieChartOutlined,
+  RiseOutlined,
   SafetyCertificateOutlined,
   TrophyOutlined,
   UnorderedListOutlined,
@@ -266,7 +267,6 @@ export default function Overview() {
     (healthCounts["At Risk"] ?? 0) +
     (healthCounts.Critical ?? 0) +
     (healthCounts.Blocked ?? 0);
-  const onTrackCount = healthCounts["On Track"] ?? 0;
   const financiallySponsoredEvents = useMemo(
     () =>
       conferences
@@ -438,8 +438,17 @@ export default function Overview() {
           </Card>
         </Col>
         <Col xs={24} sm={12} xl={6}>
-          <Card className="overview-metric-card is-health">
-            <Statistic title="On-Track Conferences" value={onTrackCount} prefix={<SafetyCertificateOutlined />} />
+          <Card className="overview-metric-card is-surplus">
+            <Statistic
+              title="Average Actual Surplus"
+              value={summary.average_surplus_percentage ?? "N/A"}
+              precision={summary.average_surplus_percentage === null ? undefined : 1}
+              prefix={<RiseOutlined />}
+              suffix={summary.average_surplus_percentage === null ? undefined : "%"}
+            />
+            <Typography.Text type="secondary" className="overview-metric-note">
+              {summary.actual_surplus_conference_count} conferences with actual financials
+            </Typography.Text>
           </Card>
         </Col>
       </Row>

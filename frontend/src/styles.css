@@ -713,8 +713,8 @@ h3 {
   border-top-color: #28a000;
 }
 
-.overview-metric-card.is-health {
-  border-top-color: #ff9000;
+.overview-metric-card.is-surplus {
+  border-top-color: #00843d;
 }
 
 .overview-metric-card .ant-statistic-title {
@@ -725,6 +725,11 @@ h3 {
 .overview-metric-card .ant-statistic-content {
   color: var(--iav-b0);
   font-weight: 800;
+}
+
+.overview-metric-note {
+  display: block;
+  margin-top: 4px;
 }
 
 .overview-chart-card {

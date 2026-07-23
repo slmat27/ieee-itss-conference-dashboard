@@ -2088,23 +2088,23 @@ def dashboard_summary(session: Session = Depends(get_session)) -> dict[str, Any]
         item = conference_payload(conf)
         flagship_cards.append(item)
         flagship_groups[conf.normalized_acronym].append(item)
-    surplus_pcts = []
+    actual_surplus_pcts = []
     for conf in conferences:
         income = conf.total_income_current
         expense = conf.total_expense_current
-        if income is None or expense is None:
-            income = conf.budgeted_income_total
-            expense = conf.budgeted_expense_total
         if income is not None and expense is not None and expense != 0:
-            surplus_pct = ((income - expense) / expense) * 100
-            if abs(surplus_pct) > 0.01:
-                surplus_pcts.append(surplus_pct)
+            actual_surplus_pcts.append(((income - expense) / expense) * 100)
     return {
         "conference_count": len(conferences),
         "open_issue_count": len(issues),
         "critical_issue_count": sum(1 for item in issues if item.severity == "Critical"),
         "average_score": round(sum(c.score for c in conferences) / len(conferences), 1) if conferences else 0,
-        "average_surplus_percentage": round(sum(surplus_pcts) / len(surplus_pcts), 1) if surplus_pcts else None,
+        "average_surplus_percentage": (
+            round(sum(actual_surplus_pcts) / len(actual_surplus_pcts), 1)
+            if actual_surplus_pcts
+            else None
+        ),
+        "actual_surplus_conference_count": len(actual_surplus_pcts),
         "status_counts": dict(Counter(c.conference_status for c in conferences)),
         "health_counts": dict(Counter(c.status_band for c in conferences)),
         "phase_counts": dict(Counter(c.lifecycle_phase for c in conferences)),

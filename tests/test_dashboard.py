@@ -79,6 +79,43 @@ def test_conference_can_be_created_and_scored(tmp_path: Path, monkeypatch) -> No
         assert duplicate.status_code == 409
 
 
+def test_dashboard_average_surplus_uses_actual_financials_only(tmp_path: Path, monkeypatch) -> None:
+    with _client(tmp_path, monkeypatch) as client:
+        conference_ids = []
+        for index, acronym in enumerate(("ACTA", "ACTB", "BUDG"), start=1):
+            created = client.post(
+                "/api/conferences",
+                json={
+                    "conference_number": f"8800{index}",
+                    "acronym": acronym,
+                    "year": 2030,
+                    "official_title": f"{acronym} Finance Test",
+                    "conference_series": "UNKNOWN",
+                    "sponsorship_type": "Financially Sponsored",
+                    "lifecycle_phase": "Expression of Interest",
+                },
+            )
+            assert created.status_code == 201
+            conference_ids.append(created.json()["id"])
+
+        assert client.patch(
+            f"/api/conferences/{conference_ids[0]}",
+            json={"total_income_current": 120.0, "total_expense_current": 100.0},
+        ).status_code == 200
+        assert client.patch(
+            f"/api/conferences/{conference_ids[1]}",
+            json={"total_income_current": 90.0, "total_expense_current": 100.0},
+        ).status_code == 200
+        assert client.patch(
+            f"/api/conferences/{conference_ids[2]}",
+            json={"budgeted_income_total": 1000.0, "budgeted_expense_total": 100.0},
+        ).status_code == 200
+
+        summary = client.get("/api/dashboard/summary").json()
+        assert summary["average_surplus_percentage"] == 5.0
+        assert summary["actual_surplus_conference_count"] == 2
+
+
 def test_conference_status_uses_score_without_overdue_override(monkeypatch) -> None:
     monkeypatch.setattr(
         dashboard,

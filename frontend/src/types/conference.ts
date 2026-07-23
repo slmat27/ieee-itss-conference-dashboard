@@ -135,6 +135,7 @@ export interface ConferenceSummary {
   open_issue_count: number;
   average_score: number;
   average_surplus_percentage: number;
+  actual_surplus_conference_count: number;
   status_counts: Record<string, number>;
   health_counts?: Record<string, number>;
   phase_counts: Record<string, number>;
