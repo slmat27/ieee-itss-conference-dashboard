@@ -1446,29 +1446,25 @@ def derive_lifecycle_phase(conference: Conference) -> str:
     return "Expression of Interest"
 
 
-def derive_conference_status(conference: Conference, score: float, lifecycle_phase: str) -> str:
-    stats = milestone_stats(conference)
-    if lifecycle_phase == "Closed":
-        return "Closed"
-    if stats["blocked"]:
-        return "Blocked"
-    if stats["total"] and stats["completion_pct"] >= 100:
-        return "Complete"
-    if stats["overdue"]:
-        if stats["max_overdue_days"] >= 60 or len(stats["overdue"]) >= 3 or score < 50:
-            return "Critical"
-        if stats["max_overdue_days"] >= 14 or len(stats["overdue"]) >= 2 or score < 70:
-            return "At Risk"
-        return "Attention Needed"
+def score_status(score: float) -> str:
     if score < 50:
         return "Critical"
     if score < 70:
         return "At Risk"
-    if stats["due_soon"] or score < 85:
+    if score < 85:
         return "Attention Needed"
-    if stats["active"] or stats["completion_pct"] > 0:
-        return "On Track"
-    return "Not Started"
+    return "On Track"
+
+
+def derive_conference_status(conference: Conference, score: float, lifecycle_phase: str) -> str:
+    stats = milestone_stats(conference)
+    if conference.conference_status == "Cancelled":
+        return "Cancelled"
+    if lifecycle_phase == "Closed":
+        return "Closed"
+    if stats["total"] and stats["completion_pct"] >= 100:
+        return "Complete"
+    return score_status(score)
 
 
 def aggregate_status(statuses: list[str]) -> str:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import io
 import json
+from types import SimpleNamespace
 
 import pandas as pd
 from fastapi.testclient import TestClient
@@ -76,6 +77,30 @@ def test_conference_can_be_created_and_scored(tmp_path: Path, monkeypatch) -> No
             },
         )
         assert duplicate.status_code == 409
+
+
+def test_conference_status_uses_score_without_overdue_override(monkeypatch) -> None:
+    monkeypatch.setattr(
+        dashboard,
+        "milestone_stats",
+        lambda _conference: {
+            "total": 10,
+            "completed": [],
+            "active": [],
+            "blocked": [],
+            "unfinished": [],
+            "overdue": [object()],
+            "due_soon": [],
+            "max_overdue_days": 90,
+            "completion_pct": 80.0,
+        },
+    )
+    conference = SimpleNamespace(conference_status="Critical")
+
+    assert dashboard.derive_conference_status(conference, 96.3, "Proceedings Processing") == "On Track"
+    assert dashboard.score_status(84.9) == "Attention Needed"
+    assert dashboard.score_status(69.9) == "At Risk"
+    assert dashboard.score_status(49.9) == "Critical"
 
 
 def test_import_templates_and_preview(tmp_path: Path, monkeypatch) -> None:
