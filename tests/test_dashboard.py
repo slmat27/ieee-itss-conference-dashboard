@@ -255,6 +255,7 @@ def test_template_upload_download_and_delete(tmp_path: Path, monkeypatch) -> Non
         download = client.get(f"/api/templates/{item['id']}/download")
         assert download.status_code == 200
         assert download.content == b"template-bytes"
+        assert "budget.xlsx" in download.headers["content-disposition"]
 
         deleted = client.delete(f"/api/templates/{item['id']}")
         assert deleted.status_code == 200

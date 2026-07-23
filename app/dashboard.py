@@ -31,6 +31,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -544,6 +545,7 @@ class TemplateFile(Base):
     template_type: Mapped[str] = mapped_column(String(80))
     file_name: Mapped[str] = mapped_column(String(260))
     original_filename: Mapped[str] = mapped_column(String(260))
+    file_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     upload_date: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: now(), onupdate=lambda: now())
 
@@ -648,6 +650,10 @@ def ensure_database_schema(engine: Any) -> None:
             email_columns = {column["name"] for column in inspector.get_columns("email_drafts")}
             if "generator" not in email_columns:
                 connection.exec_driver_sql("ALTER TABLE email_drafts ADD COLUMN generator VARCHAR(80) DEFAULT 'Local composer'")
+        if "template_files" in table_names:
+            template_columns = {column["name"] for column in inspector.get_columns("template_files")}
+            if "file_data" not in template_columns:
+                connection.exec_driver_sql("ALTER TABLE template_files ADD COLUMN file_data BLOB")
 
 
 def get_state() -> DashboardState:
@@ -2872,17 +2878,21 @@ async def upload_template(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     data = await file.read()
+    if not data:
+        raise HTTPException(422, "The selected template file is empty.")
+    clean_name = template_name.strip()
+    if not clean_name:
+        raise HTTPException(422, "Template name is required.")
     original = file.filename or "template"
-    template_dir = app_path("APP_TEMPLATE_PATH", "./data/templates")
     stored_name = f"{uuid.uuid4().hex}-{safe_filename(original)}"
-    (template_dir / stored_name).write_bytes(data)
     template = TemplateFile(
-        template_name=template_name.strip(),
+        template_name=clean_name,
         short_description=short_description.strip(),
         category=category.strip() or "Unknown",
         template_type=template_type_from_filename(original),
         file_name=stored_name,
         original_filename=original,
+        file_data=data,
     )
     session.add(template)
     session.commit()
@@ -2895,10 +2905,16 @@ def list_templates(session: Session = Depends(get_session)) -> dict[str, Any]:
 
 
 @router.get("/api/templates/{template_id}/download")
-def download_template(template_id: str, session: Session = Depends(get_session)) -> FileResponse:
+def download_template(template_id: str, session: Session = Depends(get_session)) -> Response:
     template = session.get(TemplateFile, template_id)
     if not template:
         raise HTTPException(404, "Unknown template.")
+    if template.file_data is not None:
+        return Response(
+            content=template.file_data,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename(template.original_filename)}"'},
+        )
     path = app_path("APP_TEMPLATE_PATH", "./data/templates") / template.file_name
     if not path.exists():
         raise HTTPException(404, "Stored template file is missing.")
@@ -2910,7 +2926,10 @@ def delete_template(template_id: str, session: Session = Depends(get_session)) -
     template = session.get(TemplateFile, template_id)
     if not template:
         raise HTTPException(404, "Unknown template.")
-    app_path("APP_TEMPLATE_PATH", "./data/templates").joinpath(template.file_name).unlink(missing_ok=True)
+    try:
+        app_path("APP_TEMPLATE_PATH", "./data/templates").joinpath(template.file_name).unlink(missing_ok=True)
+    except OSError:
+        pass
     session.delete(template)
     session.commit()
     return {"status": "deleted"}

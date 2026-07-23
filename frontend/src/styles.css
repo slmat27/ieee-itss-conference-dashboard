@@ -1659,6 +1659,37 @@ h3 {
   font-weight: 700 !important;
 }
 
+.template-upload-card .ant-form-item {
+  margin-bottom: 0;
+}
+
+.template-upload-card .ant-upload-wrapper,
+.template-upload-card .ant-upload-select {
+  width: 100%;
+}
+
+.template-upload-card .ant-upload-list {
+  margin-top: 6px;
+}
+
+.template-name-cell {
+  width: 100%;
+  min-width: 0;
+}
+
+.template-name-cell .ant-typography {
+  max-width: 100%;
+}
+
+.template-description {
+  margin-bottom: 0 !important;
+  overflow-wrap: anywhere;
+}
+
+.template-library-card .ant-table-cell {
+  overflow-wrap: anywhere;
+}
+
 .ant-btn-primary {
   background: var(--iav-b3);
   box-shadow: 0 8px 20px rgba(0, 145, 255, 0.24);
@@ -1683,6 +1714,13 @@ h3 {
 .ant-tag {
   border-radius: 999px;
   font-weight: 600;
+}
+
+@media (max-width: 1199px) {
+  .template-upload-card .ant-form-item,
+  .template-upload-card .ant-btn-primary {
+    margin-bottom: 12px;
+  }
 }
 
 .status-tag-wrap.ant-tag {
