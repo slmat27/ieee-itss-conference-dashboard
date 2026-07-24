@@ -80,6 +80,7 @@ export default function Conferences() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSearch = searchParams.get("search") ?? searchParams.get("q") ?? "";
   const statusFilter = searchParams.get("status") ?? "";
+  const phaseFilter = searchParams.get("phase") ?? "";
   const [conferences, setConferences] = useState<Conference[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(initialSearch);
@@ -114,13 +115,14 @@ export default function Conferences() {
 
   const filteredConferences = useMemo(
     () =>
-      statusFilter
-        ? conferences.filter(
-            (conference) =>
-              textValue(conference.conference_status) === textValue(statusFilter),
-          )
-        : conferences,
-    [conferences, statusFilter],
+      conferences.filter(
+        (conference) =>
+          (!statusFilter ||
+            textValue(conference.conference_status) === textValue(statusFilter)) &&
+          (!phaseFilter ||
+            textValue(conference.lifecycle_phase) === textValue(phaseFilter)),
+      ),
+    [conferences, phaseFilter, statusFilter],
   );
 
   const columns: ColumnsType<Conference> = useMemo(
@@ -241,21 +243,42 @@ export default function Conferences() {
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <Card>
-            {statusFilter && (
+            {(statusFilter || phaseFilter) && (
               <div className="conference-filter-bar">
-                <Typography.Text type="secondary">Conference Status</Typography.Text>
-                <Tag
-                  color={statusColor(statusFilter)}
-                  closable
-                  onClose={(event) => {
-                    event.preventDefault();
-                    const params = new URLSearchParams(searchParams);
-                    params.delete("status");
-                    setSearchParams(params);
-                  }}
-                >
-                  {statusFilter}
-                </Tag>
+                {statusFilter && (
+                  <>
+                    <Typography.Text type="secondary">Conference Status</Typography.Text>
+                    <Tag
+                      color={statusColor(statusFilter)}
+                      closable
+                      onClose={(event) => {
+                        event.preventDefault();
+                        const params = new URLSearchParams(searchParams);
+                        params.delete("status");
+                        setSearchParams(params);
+                      }}
+                    >
+                      {statusFilter}
+                    </Tag>
+                  </>
+                )}
+                {phaseFilter && (
+                  <>
+                    <Typography.Text type="secondary">Conference Lifecycle</Typography.Text>
+                    <Tag
+                      color="blue"
+                      closable
+                      onClose={(event) => {
+                        event.preventDefault();
+                        const params = new URLSearchParams(searchParams);
+                        params.delete("phase");
+                        setSearchParams(params);
+                      }}
+                    >
+                      {phaseFilter}
+                    </Tag>
+                  </>
+                )}
               </div>
             )}
             <Table
@@ -266,8 +289,13 @@ export default function Conferences() {
               pagination={{
                 pageSize: 20,
                 showSizeChanger: false,
-                showTotal: (total) =>
-                  `${total} conference${total === 1 ? "" : "s"}${statusFilter ? ` with status ${statusFilter}` : ""}`,
+                showTotal: (total) => {
+                  const filters = [
+                    statusFilter ? `status ${statusFilter}` : "",
+                    phaseFilter ? `lifecycle ${phaseFilter}` : "",
+                  ].filter(Boolean);
+                  return `${total} conference${total === 1 ? "" : "s"}${filters.length ? ` with ${filters.join(" and ")}` : ""}`;
+                },
               }}
               size="middle"
               scroll={{ x: 980 }}

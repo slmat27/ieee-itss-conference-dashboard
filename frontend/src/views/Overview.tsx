@@ -566,7 +566,12 @@ export default function Overview() {
                     <span>Conferences</span>
                   </div>
                 </div>
-                {renderChartLegend(phaseData, phaseTotal, (_entry, index) => PHASE_COLORS[index % PHASE_COLORS.length])}
+                {renderChartLegend(
+                  phaseData,
+                  phaseTotal,
+                  (_entry, index) => PHASE_COLORS[index % PHASE_COLORS.length],
+                  (entry) => navigate(`/conferences?phase=${encodeURIComponent(entry.name)}`),
+                )}
               </div>
             ) : (
               <Typography.Text type="secondary">No phase data available</Typography.Text>
