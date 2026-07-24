@@ -24,6 +24,11 @@ interface ItemResponse<T> {
 }
 
 const STATUS_COLORS: Record<string, string> = {
+  "on track": "green",
+  "attention needed": "gold",
+  "at risk": "orange",
+  closed: "default",
+  cancelled: "default",
   complete: "green",
   completed: "green",
   approved: "green",
@@ -74,6 +79,7 @@ export default function Conferences() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSearch = searchParams.get("search") ?? searchParams.get("q") ?? "";
+  const statusFilter = searchParams.get("status") ?? "";
   const [conferences, setConferences] = useState<Conference[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(initialSearch);
@@ -97,8 +103,25 @@ export default function Conferences() {
 
   const handleSearch = () => {
     const next = search.trim();
-    setSearchParams(next ? { search: next } : {});
+    const params = new URLSearchParams(searchParams);
+    if (next) params.set("search", next);
+    else {
+      params.delete("search");
+      params.delete("q");
+    }
+    setSearchParams(params);
   };
+
+  const filteredConferences = useMemo(
+    () =>
+      statusFilter
+        ? conferences.filter(
+            (conference) =>
+              textValue(conference.conference_status) === textValue(statusFilter),
+          )
+        : conferences,
+    [conferences, statusFilter],
+  );
 
   const columns: ColumnsType<Conference> = useMemo(
     () => [
@@ -147,25 +170,11 @@ export default function Conferences() {
         render: (value: string) => <Tag>{value || "-"}</Tag>,
       },
       {
-        title: "MOU",
-        dataIndex: "mou_status",
-        width: 135,
-        sorter: (a, b) => textValue(a.mou_status).localeCompare(textValue(b.mou_status)),
-        render: (value: string) => <Tag color={statusColor(value)}>{value || "-"}</Tag>,
-      },
-      {
-        title: "Finance",
-        dataIndex: "finance_status",
-        width: 135,
-        sorter: (a, b) => textValue(a.finance_status).localeCompare(textValue(b.finance_status)),
-        render: (value: string) => <Tag color={statusColor(value)}>{value || "-"}</Tag>,
-      },
-      {
-        title: "Publication",
-        dataIndex: "publication_status",
-        width: 145,
-        sorter: (a, b) => textValue(a.publication_status).localeCompare(textValue(b.publication_status)),
-        render: (value: string) => <Tag color={statusColor(value)}>{value || "-"}</Tag>,
+        title: "Conference Status",
+        dataIndex: "conference_status",
+        width: 170,
+        sorter: (a, b) => textValue(a.conference_status).localeCompare(textValue(b.conference_status)),
+        render: (value: string) => <Tag className="status-tag-wrap" color={statusColor(value)}>{value || "-"}</Tag>,
       },
       {
         title: "Issues",
@@ -217,7 +226,10 @@ export default function Conferences() {
             allowClear
             onClear={() => {
               setSearch("");
-              setSearchParams({});
+              const params = new URLSearchParams(searchParams);
+              params.delete("search");
+              params.delete("q");
+              setSearchParams(params);
             }}
           />
           <Button icon={<ReloadOutlined />} onClick={() => fetchConferences()}>
@@ -229,18 +241,36 @@ export default function Conferences() {
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <Card>
+            {statusFilter && (
+              <div className="conference-filter-bar">
+                <Typography.Text type="secondary">Conference Status</Typography.Text>
+                <Tag
+                  color={statusColor(statusFilter)}
+                  closable
+                  onClose={(event) => {
+                    event.preventDefault();
+                    const params = new URLSearchParams(searchParams);
+                    params.delete("status");
+                    setSearchParams(params);
+                  }}
+                >
+                  {statusFilter}
+                </Tag>
+              </div>
+            )}
             <Table
-              dataSource={conferences}
+              dataSource={filteredConferences}
               columns={columns}
               rowKey="id"
               loading={loading}
               pagination={{
                 pageSize: 20,
                 showSizeChanger: false,
-                showTotal: (total) => `${total} conferences`,
+                showTotal: (total) =>
+                  `${total} conference${total === 1 ? "" : "s"}${statusFilter ? ` with status ${statusFilter}` : ""}`,
               }}
               size="middle"
-              scroll={{ x: 1180 }}
+              scroll={{ x: 980 }}
             />
           </Card>
         </Col>

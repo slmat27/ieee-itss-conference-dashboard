@@ -83,18 +83,40 @@ function percentLabel(value: number, total: number) {
   return `${Math.round((Number(value) / total) * 100)}%`;
 }
 
-function renderChartLegend(data: ChartDatum[], total: number, colorFor: (entry: ChartDatum, index: number) => string) {
+function renderChartLegend(
+  data: ChartDatum[],
+  total: number,
+  colorFor: (entry: ChartDatum, index: number) => string,
+  onSelect?: (entry: ChartDatum) => void,
+) {
   return (
     <div className="overview-chart-legend">
-      {data.map((entry, index) => (
-        <div className="overview-chart-legend-item" key={entry.name}>
+      {data.map((entry, index) => {
+        const content = (
+          <>
           <span className="overview-chart-legend-dot" style={{ backgroundColor: colorFor(entry, index) }} />
           <span className="overview-chart-legend-label">{humanizeLabel(entry.name)}</span>
           <span className="overview-chart-legend-value">
             {entry.value} ({percentLabel(entry.value, total)})
           </span>
-        </div>
-      ))}
+          </>
+        );
+        return onSelect ? (
+          <button
+            type="button"
+            className="overview-chart-legend-item is-clickable"
+            key={entry.name}
+            onClick={() => onSelect(entry)}
+            title={`View ${entry.name} conferences`}
+          >
+            {content}
+          </button>
+        ) : (
+          <div className="overview-chart-legend-item" key={entry.name}>
+            {content}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -493,7 +515,12 @@ export default function Overview() {
                     <span>Conferences</span>
                   </div>
                 </div>
-                {renderChartLegend(statusData, statusTotal, (entry) => statusColor(entry.name))}
+                {renderChartLegend(
+                  statusData,
+                  statusTotal,
+                  (entry) => statusColor(entry.name),
+                  (entry) => navigate(`/conferences?status=${encodeURIComponent(entry.name)}`),
+                )}
               </div>
             ) : (
               <Typography.Text type="secondary">No status data available</Typography.Text>
