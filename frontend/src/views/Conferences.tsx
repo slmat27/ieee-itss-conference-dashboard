@@ -131,6 +131,7 @@ export default function Conferences() {
       {
         title: "Conference",
         dataIndex: "acronym",
+        width: "12.5%",
         sorter: (a, b) => textValue(a.acronym).localeCompare(textValue(b.acronym)),
         render: (value: string, record) => (
           <Button type="link" className="table-link" onClick={() => navigate(`/conferences/${record.id}`)}>
@@ -141,34 +142,35 @@ export default function Conferences() {
       {
         title: "Record #",
         dataIndex: "conference_number",
-        width: 120,
+        width: "9%",
         sorter: (a, b) => textValue(a.conference_number).localeCompare(textValue(b.conference_number)),
         render: formatRecordNumber,
       },
       {
         title: "Start",
         dataIndex: "start_date",
-        width: 120,
+        width: "9%",
         sorter: (a, b) => dateSortValue(a.start_date) - dateSortValue(b.start_date),
         render: formatDate,
       },
       {
         title: "End",
         dataIndex: "end_date",
-        width: 120,
+        width: "9%",
         sorter: (a, b) => dateSortValue(a.end_date) - dateSortValue(b.end_date),
         render: formatDate,
       },
       {
         title: "Location",
         key: "location",
+        width: "14.5%",
         sorter: (a, b) => locationLabel(a).localeCompare(locationLabel(b)),
         render: (_, record) => locationLabel(record),
       },
       {
         title: "Phase",
         dataIndex: "lifecycle_phase",
-        width: 150,
+        width: "17.5%",
         sorter: (a, b) => textValue(a.lifecycle_phase).localeCompare(textValue(b.lifecycle_phase)),
         render: (value: string) => (
           <Tag className="status-tag-wrap" color={lifecyclePhaseColor(value)}>
@@ -179,14 +181,14 @@ export default function Conferences() {
       {
         title: "Conference Status",
         dataIndex: "conference_status",
-        width: 170,
+        width: "14%",
         sorter: (a, b) => textValue(a.conference_status).localeCompare(textValue(b.conference_status)),
         render: (value: string) => <Tag className="status-tag-wrap" color={statusColor(value)}>{value || "-"}</Tag>,
       },
       {
         title: "Issues",
         dataIndex: "open_issue_count",
-        width: 95,
+        width: "7.5%",
         sorter: (a, b) => (a.open_issue_count ?? 0) - (b.open_issue_count ?? 0),
         render: (value: number) =>
           value > 0 ? <Tag color="red">{value}</Tag> : <Tag color="green">0</Tag>,
@@ -194,7 +196,7 @@ export default function Conferences() {
       {
         title: "Score",
         dataIndex: "score",
-        width: 86,
+        width: "7%",
         align: "center",
         sorter: (a, b) => (a.score ?? 0) - (b.score ?? 0),
         render: (value: number) => (
@@ -287,6 +289,7 @@ export default function Conferences() {
               </div>
             )}
             <Table
+              className="conference-records-table"
               dataSource={filteredConferences}
               columns={columns}
               rowKey="id"
@@ -303,7 +306,7 @@ export default function Conferences() {
                 },
               }}
               size="middle"
-              scroll={{ x: 980 }}
+              tableLayout="fixed"
             />
           </Card>
         </Col>

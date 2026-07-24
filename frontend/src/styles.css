@@ -836,6 +836,18 @@ h3 {
   margin-bottom: 16px;
 }
 
+.conference-records-table .ant-table-cell {
+  padding-inline: 10px !important;
+  overflow-wrap: anywhere;
+}
+
+.conference-records-table .table-link {
+  height: auto;
+  padding-inline: 0;
+  text-align: left;
+  white-space: normal;
+}
+
 .overview-chart-legend-dot {
   width: 10px;
   height: 10px;
