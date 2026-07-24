@@ -38,8 +38,59 @@ def test_first_run_creates_database_and_reference_data(tmp_path: Path, monkeypat
         assert response.status_code == 200
         data = response.json()
         assert "ITSC" in [item["code"] for item in data["conference_series"]]
+        assert "TCS" in [item["code"] for item in data["conference_series"]]
         assert "Financially Co-Sponsored" in data["sponsorship_types"]
         assert (tmp_path / "data" / "itss_dashboard.db").exists()
+
+
+def test_technically_cosponsored_conferences_use_tcs_without_finance_weight(tmp_path: Path, monkeypatch) -> None:
+    with _client(tmp_path, monkeypatch) as client:
+        tcs_response = client.post(
+            "/api/conferences",
+            json={
+                "conference_number": "99101",
+                "acronym": "TCSA",
+                "year": 2028,
+                "official_title": "Technical Co-Sponsorship Test",
+                "conference_series": "UNKNOWN",
+                "sponsorship_type": "Technically Co-Sponsored",
+                "lifecycle_phase": "Detailed Planning",
+            },
+        )
+        assert tcs_response.status_code == 201
+        tcs = tcs_response.json()
+        assert tcs["conference_series"] == "TCS"
+        assert tcs["finance_status"] == "Not Applicable"
+        assert tcs["score_details"]["series_policy"] == {
+            "conference_series": "TCS",
+            "tcs_finance_weight_zero": True,
+            "excluded_milestone_codes": ["BANKING", "BUDGET", "FIN_CLOSE"],
+        }
+        milestones = {item["code"]: item for item in tcs["score_details"]["milestones"]}
+        for code in ("BUDGET", "BANKING", "FIN_CLOSE"):
+            assert milestones[code]["status"] == "Not Applicable"
+            assert milestones[code]["effective_weight"] == 0
+            assert milestones[code]["excluded"] is True
+        assert "Finance and Banking" not in tcs["score_details"]["dimension_scores"]
+
+        financial_response = client.post(
+            "/api/conferences",
+            json={
+                "conference_number": "99102",
+                "acronym": "FINA",
+                "year": 2028,
+                "official_title": "Financial Sponsorship Test",
+                "conference_series": "UNKNOWN",
+                "sponsorship_type": "Financially Sponsored",
+                "lifecycle_phase": "Detailed Planning",
+            },
+        )
+        assert financial_response.status_code == 201
+        financial = financial_response.json()
+        assert financial["score_details"]["series_policy"]["tcs_finance_weight_zero"] is False
+        financial_milestones = {item["code"]: item for item in financial["score_details"]["milestones"]}
+        assert financial_milestones["BUDGET"]["weight"] > 0
+        assert financial_milestones["BANKING"]["weight"] > 0
 
 
 def test_series_editing_compact_export_and_date_timeliness(tmp_path: Path, monkeypatch) -> None:

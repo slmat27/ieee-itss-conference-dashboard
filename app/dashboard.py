@@ -86,6 +86,7 @@ NORMALIZED_STATUSES = [
 CONFERENCE_SERIES = [
     ("ITSC", "International Conference on Intelligent Transportation Systems", True),
     ("IV", "Intelligent Vehicles Symposium", True),
+    ("TCS", "Technically Co-Sponsored Conferences", False),
     ("FISTS", "Forum for Innovative and Sustainable Transportation Systems", False),
     ("ICIRT", "International Conference on Intelligent Rail Transportation", False),
     ("ICVES", "International Conference on Vehicular Electronics and Safety", False),
@@ -93,7 +94,6 @@ CONFERENCE_SERIES = [
     ("SOLI", "International Conference on Service Operations and Logistics, and Informatics", False),
     ("MESA", "International Conference on Mechatronic and Embedded Systems and Applications", False),
     ("VNC", "Vehicular Networking Conference", False),
-    ("Other TCS Conference", "Other TCS Conference", False),
     ("Custom Conference Series", "Custom Conference Series", False),
 ]
 SPONSORSHIP_TYPES = [
@@ -207,6 +207,7 @@ MILESTONE_DATE_DEFAULTS = {
     "PROCEEDINGS": {"anchor": "end", "months": 2, "days": 0, "warning_days": 30},
     "FIN_CLOSE": {"anchor": "end", "months": 9, "days": 0, "warning_days": 60},
 }
+TCS_FINANCE_MILESTONE_CODES = {"BUDGET", "BANKING", "FIN_CLOSE"}
 DEFAULT_MILESTONE_STATUS_SCORES = {
     "completed": 100.0,
     "unknown": 0.0,
@@ -792,6 +793,11 @@ def sanitize_conference_series(values: Any) -> list[dict[str, Any]]:
                 else:
                     raw_code, raw_name = text, text
                     flagship = raw_code.strip().upper() in {"ITSC", "IV"}
+        if raw_code.upper() in {"OTHER TCS CONFERENCE", "TCS"} or raw_name.upper() in {
+            "OTHER TCS CONFERENCE",
+            "TECHNICALLY CO-SPONSORED CONFERENCES",
+        }:
+            raw_code, raw_name, flagship = "TCS", "Technically Co-Sponsored Conferences", False
         matched = defaults_by_name.get(raw_name.upper()) or defaults_by_code.get(raw_code.upper())
         if matched and not structured_value:
             raw_code, raw_name, flagship = matched["code"], matched["name"], bool(matched["flagship"])
@@ -803,6 +809,12 @@ def sanitize_conference_series(values: Any) -> list[dict[str, Any]]:
         items.append({"code": code, "name": name, "flagship": flagship})
     if "UNKNOWN" not in seen:
         items.insert(0, {"code": "UNKNOWN", "name": "Unknown", "flagship": False})
+    if "TCS" not in seen:
+        unknown_offset = 1 if items and items[0]["code"] == "UNKNOWN" else 0
+        items.insert(
+            unknown_offset,
+            {"code": "TCS", "name": "Technically Co-Sponsored Conferences", "flagship": False},
+        )
     return items
 
 
@@ -1567,12 +1579,35 @@ def aggregate_finance_status(statuses: dict[str, str]) -> str:
     return aggregate_status(finance_statuses)
 
 
+def is_tcs_conference(conference: Conference) -> bool:
+    return (
+        conference.sponsorship_type == "Technically Co-Sponsored"
+        or conference.conference_series.strip().upper() == "TCS"
+    )
+
+
+def apply_tcs_conference_policy(conference: Conference) -> bool:
+    if not is_tcs_conference(conference):
+        return False
+    conference.conference_series = "TCS"
+    for milestone in conference.milestones:
+        if milestone.definition.code in TCS_FINANCE_MILESTONE_CODES:
+            if milestone.status != "Not Applicable":
+                milestone.status = "Not Applicable"
+                milestone.last_updated = now()
+            milestone.manual_override = False
+    return True
+
+
 def recalculate(conference: Conference, session: Session, *, record_history: bool = True) -> None:
     settings = score_settings(session)
     weights = settings.get("dimension_weights", SCORE_WEIGHTS)
     milestone_status_scores = settings.get("milestone_status_scores", DEFAULT_MILESTONE_STATUS_SCORES)
     ensure_milestones(conference, session)
     session.flush()
+    session.expire(conference, ["milestones"])
+    list(conference.milestones)
+    tcs_policy_applied = apply_tcs_conference_policy(conference)
     sync_conference_facts_from_milestones(conference)
     dimension_totals: dict[str, float] = {}
     dimension_weights: dict[str, float] = {}
@@ -1583,6 +1618,21 @@ def recalculate(conference: Conference, session: Session, *, record_history: boo
     details: list[dict[str, Any]] = []
     for milestone in conference.milestones:
         definition = milestone.definition
+        if tcs_policy_applied and definition.code in TCS_FINANCE_MILESTONE_CODES:
+            details.append(
+                {
+                    "code": definition.code,
+                    "name": definition.name,
+                    "status": "Not Applicable",
+                    "score": None,
+                    "weight": 0.0,
+                    "lateness_factor": 0.0,
+                    "effective_weight": 0.0,
+                    "excluded": True,
+                    "exclusion_reason": "Financial involvement is not applicable to TCS conferences.",
+                }
+            )
+            continue
         score = milestone_score(milestone.status, milestone.due_date, milestone_status_scores)
         if score is None:
             continue
@@ -1645,6 +1695,11 @@ def recalculate(conference: Conference, session: Session, *, record_history: boo
             "dimension_scores": dimension_scores,
             "formula": formula,
             "formula_context": formula_context,
+            "series_policy": {
+                "conference_series": conference.conference_series,
+                "tcs_finance_weight_zero": tcs_policy_applied,
+                "excluded_milestone_codes": sorted(TCS_FINANCE_MILESTONE_CODES) if tcs_policy_applied else [],
+            },
         }
     )
     if record_history:
