@@ -1,7 +1,9 @@
 import {
   AppstoreOutlined,
+  DeleteOutlined,
   EditOutlined,
   FieldTimeOutlined,
+  PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
   SafetyCertificateOutlined,
@@ -89,8 +91,8 @@ const milestoneOffsetLabels: Record<string, string> = {
   REVIEWS: "Reviews",
   VENUE: "Venue",
   REGISTRATION: "Registration",
-  PROCEEDINGS: "Proceedings",
-  FIN_CLOSE: "Financial Close",
+  PROCEEDINGS: "Publication / Proceedings",
+  FIN_CLOSE: "Conference Closure",
 };
 
 const formulaVariables = [
@@ -108,6 +110,7 @@ const formulaVariables = [
 
 type PermissionRow = { key: string; label: string; description: string };
 type MappingRow = { source: string; normalized: string };
+type ConferenceSeriesItem = { code: string; name: string; flagship: boolean };
 
 export default function Settings() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -147,6 +150,16 @@ export default function Settings() {
 
   const saveReferenceConfig = async () => {
     if (!settings?.reference_config) return;
+    const series = (settings.reference_config.conference_series ?? []) as ConferenceSeriesItem[];
+    const codes = series.map((item) => item.code.trim().toUpperCase());
+    if (series.some((item) => !item.code.trim() || !item.name.trim())) {
+      message.error("Every conference series needs a code and display name");
+      return;
+    }
+    if (new Set(codes).size !== codes.length) {
+      message.error("Conference series codes must be unique");
+      return;
+    }
     setSaving(true);
     try {
       const updated = await api<AppSettings & { reference_cleanup?: Record<string, number> }>("/settings/reference-config", {
@@ -243,7 +256,11 @@ export default function Settings() {
     });
   };
 
-  const updateMilestoneOffset = (code: string, field: "anchor" | "months" | "days", value: string | number) => {
+  const updateMilestoneOffset = (
+    code: string,
+    field: "anchor" | "months" | "days" | "warning_days",
+    value: string | number,
+  ) => {
     if (!settings) return;
     const current = settings.milestone_date_defaults?.[code] ?? { anchor: "start", months: 0, days: 0 };
     setSettings({
@@ -254,6 +271,7 @@ export default function Settings() {
           anchor: field === "anchor" ? String(value) : String(current.anchor ?? "start"),
           months: field === "months" ? Number(value) : Number(current.months ?? 0),
           days: field === "days" ? Number(value) : Number(current.days ?? 0),
+          warning_days: field === "warning_days" ? Number(value) : Number(current.warning_days ?? 0),
         },
       },
     });
@@ -261,6 +279,52 @@ export default function Settings() {
 
   const updateMilestoneStatusScore = (key: string, value: number) => {
     updateNestedScoreSetting("milestone_status_scores", key, value);
+  };
+
+  const updateConferenceSeries = (
+    index: number,
+    field: keyof ConferenceSeriesItem,
+    value: string | boolean,
+  ) => {
+    if (!settings) return;
+    const current = [...((settings.reference_config?.conference_series ?? []) as ConferenceSeriesItem[])];
+    current[index] = {
+      ...current[index],
+      [field]: field === "code" ? String(value).toUpperCase() : value,
+    };
+    setSettings({
+      ...settings,
+      reference_config: {
+        ...(settings.reference_config ?? {}),
+        conference_series: current,
+      },
+    });
+  };
+
+  const addConferenceSeries = () => {
+    if (!settings) return;
+    const current = [...((settings.reference_config?.conference_series ?? []) as ConferenceSeriesItem[])];
+    current.push({ code: "", name: "", flagship: false });
+    setSettings({
+      ...settings,
+      reference_config: {
+        ...(settings.reference_config ?? {}),
+        conference_series: current,
+      },
+    });
+  };
+
+  const removeConferenceSeries = (index: number) => {
+    if (!settings) return;
+    const current = [...((settings.reference_config?.conference_series ?? []) as ConferenceSeriesItem[])];
+    current.splice(index, 1);
+    setSettings({
+      ...settings,
+      reference_config: {
+        ...(settings.reference_config ?? {}),
+        conference_series: current,
+      },
+    });
   };
 
   const permissionRows = useMemo<PermissionRow[]>(
@@ -484,6 +548,11 @@ export default function Settings() {
                     <div>
                       <strong>{milestoneOffsetLabels[code] ?? code}</strong>
                       <span>{code}</span>
+                      {(code === "PROCEEDINGS" || code === "FIN_CLOSE") && (
+                        <Typography.Text type="secondary">
+                          Due offset sets the green deadline. Grace days are yellow; later dates are red.
+                        </Typography.Text>
+                      )}
                     </div>
                     <Select
                       value={String(offset.anchor ?? "start")}
@@ -503,6 +572,14 @@ export default function Settings() {
                       addonAfter="days"
                       onChange={(value) => updateMilestoneOffset(code, "days", Number(value ?? 0))}
                     />
+                    {(code === "PROCEEDINGS" || code === "FIN_CLOSE") && (
+                      <InputNumber
+                        value={Number(offset.warning_days ?? 0)}
+                        min={0}
+                        addonAfter="grace days"
+                        onChange={(value) => updateMilestoneOffset(code, "warning_days", Number(value ?? 0))}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -635,8 +712,60 @@ export default function Settings() {
           className="settings-inline-alert"
           message="Removing a configured value moves existing records using it to Unknown through the backend cleanup rule."
         />
+        <div className="conference-series-editor">
+          <div className="conference-series-editor-head">
+            <div>
+              <Typography.Text strong>Conference Series</Typography.Text>
+              <Typography.Text type="secondary">
+                Used by conference records, flagship lanes, imports, and conference-series knowledge scope.
+              </Typography.Text>
+            </div>
+            <Button icon={<PlusOutlined />} onClick={addConferenceSeries}>
+              Add Series
+            </Button>
+          </div>
+          <div className="conference-series-labels" aria-hidden="true">
+            <span>Code</span>
+            <span>Display name</span>
+            <span>Flagship</span>
+            <span>Action</span>
+          </div>
+          <div className="conference-series-rows">
+            {((settings.reference_config?.conference_series ?? []) as ConferenceSeriesItem[]).map((item, index) => (
+              <div className="conference-series-row" key={`conference-series-${index}`}>
+                <Input
+                  aria-label="Conference series code"
+                  value={item.code}
+                  maxLength={32}
+                  disabled={item.code === "UNKNOWN"}
+                  onChange={(event) => updateConferenceSeries(index, "code", event.target.value)}
+                />
+                <Input
+                  aria-label="Conference series display name"
+                  value={item.name}
+                  disabled={item.code === "UNKNOWN"}
+                  onChange={(event) => updateConferenceSeries(index, "name", event.target.value)}
+                />
+                <Switch
+                  aria-label="Flagship conference series"
+                  checked={item.flagship}
+                  disabled={item.code === "UNKNOWN"}
+                  onChange={(checked) => updateConferenceSeries(index, "flagship", checked)}
+                />
+                <Button
+                  danger
+                  type="text"
+                  icon={<DeleteOutlined />}
+                  disabled={item.code === "UNKNOWN"}
+                  title="Delete conference series"
+                  onClick={() => removeConferenceSeries(index)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
         <div className="reference-config-grid">
-          {Object.entries(settings.reference_config ?? {}).map(([key, values]) => (
+          {Object.entries(settings.reference_config ?? {}).filter(([key]) => key !== "conference_series").map(([key, values]) => (
             <div className="reference-config-card" key={key}>
               <div className="reference-config-head">
                 <strong>{settings.reference_config_labels?.[key] ?? key}</strong>

@@ -204,8 +204,8 @@ MILESTONE_DATE_DEFAULTS = {
     "VENUE": {"anchor": "start", "months": -12, "days": 0},
     "REGISTRATION": {"anchor": "start", "months": -5, "days": 0},
     # Proceedings ~2-3 months after, financial close ~6-9 months after
-    "PROCEEDINGS": {"anchor": "end", "months": 2, "days": 0},
-    "FIN_CLOSE": {"anchor": "end", "months": 9, "days": 0},
+    "PROCEEDINGS": {"anchor": "end", "months": 2, "days": 0, "warning_days": 30},
+    "FIN_CLOSE": {"anchor": "end", "months": 9, "days": 0, "warning_days": 60},
 }
 DEFAULT_MILESTONE_STATUS_SCORES = {
     "completed": 100.0,
@@ -766,11 +766,13 @@ def sanitize_conference_series(values: Any) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
     for value in values:
+        structured_value = isinstance(value, dict)
         if isinstance(value, str) and value.strip().startswith("{"):
             try:
                 parsed = ast.literal_eval(value.strip())
                 if isinstance(parsed, dict):
                     value = parsed
+                    structured_value = True
             except (SyntaxError, ValueError):
                 pass
         if isinstance(value, dict):
@@ -791,7 +793,7 @@ def sanitize_conference_series(values: Any) -> list[dict[str, Any]]:
                     raw_code, raw_name = text, text
                     flagship = raw_code.strip().upper() in {"ITSC", "IV"}
         matched = defaults_by_name.get(raw_name.upper()) or defaults_by_code.get(raw_code.upper())
-        if matched:
+        if matched and not structured_value:
             raw_code, raw_name, flagship = matched["code"], matched["name"], bool(matched["flagship"])
         code = raw_code.strip().upper() or "UNKNOWN"
         name = raw_name.strip() or code
@@ -1120,7 +1122,7 @@ def merged_role_permissions(raw: dict[str, Any] | None) -> dict[str, dict[str, b
     return clean
 
 
-def milestone_date_offsets(session: Session | None = None) -> dict[str, dict[str, int]]:
+def milestone_date_offsets(session: Session | None = None) -> dict[str, dict[str, Any]]:
     """Get persisted milestone date offsets, falling back to MILESTONE_DATE_DEFAULTS."""
     def normalize_offsets(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
         merged = json.loads(json.dumps(MILESTONE_DATE_DEFAULTS))
@@ -1138,6 +1140,10 @@ def milestone_date_offsets(session: Session | None = None) -> dict[str, dict[str
                 current["days"] = int(offset.get("days", current.get("days", 0)))
             except (TypeError, ValueError):
                 current["days"] = int(current.get("days", 0))
+            try:
+                current["warning_days"] = max(0, int(offset.get("warning_days", current.get("warning_days", 0))))
+            except (TypeError, ValueError):
+                current["warning_days"] = max(0, int(current.get("warning_days", 0)))
             merged[str(code).upper()] = current
         return merged
 
@@ -1174,6 +1180,47 @@ def milestone_due_date(code: str, start_date: date | None, end_date: date | None
 
 def milestone_due_from_start(code: str, start_date: date | None, *, offsets: dict[str, dict[str, int]] | None = None) -> date | None:
     return milestone_due_date(code, start_date, None, offsets=offsets)
+
+
+def date_timeliness(
+    conference: Conference,
+    code: str,
+    actual_date: date | None,
+    session: Session | None = None,
+) -> dict[str, Any]:
+    offsets = milestone_date_offsets(session)
+    due_date = milestone_due_date(code, conference.start_date, conference.end_date, offsets=offsets)
+    warning_days = max(0, int(offsets.get(code, {}).get("warning_days", 0)))
+    if due_date is None:
+        return {
+            "state": "unknown",
+            "label": "Not assessed",
+            "due_date": None,
+            "days_from_due": None,
+            "warning_days": warning_days,
+        }
+    comparison_date = actual_date or date.today()
+    days_from_due = (comparison_date - due_date).days
+    if actual_date is not None:
+        if days_from_due <= 0:
+            state, label = "on_time", "On time"
+        elif days_from_due <= warning_days:
+            state, label = "warning", "Slightly late"
+        else:
+            state, label = "late", "Late"
+    elif days_from_due <= 0:
+        state, label = "pending", "Pending"
+    elif days_from_due <= warning_days:
+        state, label = "warning", "Due"
+    else:
+        state, label = "late", "Overdue"
+    return {
+        "state": state,
+        "label": label,
+        "due_date": due_date.isoformat(),
+        "days_from_due": days_from_due,
+        "warning_days": warning_days,
+    }
 
 
 def ensure_milestones(conference: Conference, session: Session) -> None:
@@ -1686,6 +1733,7 @@ class ConferenceIn(BaseModel):
 class ConferenceUpdate(BaseModel):
     official_title: str | None = None
     conference_number: str | None = None
+    conference_series: str | None = None
     lifecycle_phase: str | None = None
     phase_override: bool | None = None
     conference_status: str | None = None
@@ -1706,6 +1754,8 @@ class ConferenceUpdate(BaseModel):
     budgeted_expense_total: float | None = None
     itss_loan_requested: bool | None = None
     itss_loan_amount: float | None = None
+    accounting_close_date: date | None = None
+    xplore_posting_date: date | None = None
     comments: str | None = None
     committee_contact: str | None = None
     change_comment: str | None = None
@@ -1842,7 +1892,7 @@ def finance_contact_name(conference: Conference) -> str | None:
     return conference.financial_analyst
 
 
-def conference_payload(conference: Conference) -> dict[str, Any]:
+def conference_payload(conference: Conference, session: Session | None = None) -> dict[str, Any]:
     details = json.loads(conference.score_details_json or "{}")
     source_details = json.loads(conference.source_details_json or "{}")
     return {
@@ -1891,9 +1941,11 @@ def conference_payload(conference: Conference) -> dict[str, Any]:
         "itss_loan_requested": conference.itss_loan_requested,
         "itss_loan_amount": conference.itss_loan_amount,
         "accounting_close_date": conference.accounting_close_date.isoformat() if conference.accounting_close_date else None,
+        "accounting_close_timeliness": date_timeliness(conference, "FIN_CLOSE", conference.accounting_close_date, session),
         "publication_status": conference.publication_status,
         "proceedings_submitted_date": conference.proceedings_submitted_date.isoformat() if conference.proceedings_submitted_date else None,
         "xplore_posting_date": conference.xplore_posting_date.isoformat() if conference.xplore_posting_date else None,
+        "publication_timeliness": date_timeliness(conference, "PROCEEDINGS", conference.xplore_posting_date, session),
         "score": conference.score,
         "base_score": conference.base_score,
         "issue_penalty": conference.issue_penalty,
@@ -2085,7 +2137,7 @@ def dashboard_summary(session: Session = Depends(get_session)) -> dict[str, Any]
     for conf in sorted(conferences, key=lambda item: (item.normalized_acronym, item.year), reverse=True):
         if conf.normalized_acronym not in flagship_groups:
             continue
-        item = conference_payload(conf)
+        item = conference_payload(conf, session)
         flagship_cards.append(item)
         flagship_groups[conf.normalized_acronym].append(item)
     actual_surplus_pcts = []
@@ -2168,7 +2220,7 @@ def list_conferences(
             or (c.country and needle in c.country.lower())
             or c.id in alias_matches
         ]
-    return {"items": [conference_payload(c) for c in items]}
+    return {"items": [conference_payload(c, session) for c in items]}
 
 
 @router.post("/api/conferences", status_code=201)
@@ -2230,12 +2282,12 @@ def create_conference(payload: ConferenceIn, session: Session = Depends(get_sess
     recalculate(conference, session)
     create_snapshot(conference, session, reason="create")
     session.commit()
-    return conference_payload(conference)
+    return conference_payload(conference, session)
 
 
 @router.get("/api/conferences/{conference_id}")
 def get_conference(conference_id: str, session: Session = Depends(get_session)) -> dict[str, Any]:
-    return conference_payload(require_conference(session, conference_id))
+    return conference_payload(require_conference(session, conference_id), session)
 
 
 @router.patch("/api/conferences/{conference_id}")
@@ -2243,6 +2295,8 @@ def update_conference(conference_id: str, payload: ConferenceUpdate, session: Se
     conference = require_conference(session, conference_id)
     data = payload.model_dump(exclude_unset=True)
     comment = data.pop("change_comment", None)
+    if "conference_series" in data:
+        data["conference_series"] = configured_value(session, "conference_series", data["conference_series"])
     for derived_field in (
         "conference_status",
         "lifecycle_phase",
@@ -2276,7 +2330,7 @@ def update_conference(conference_id: str, payload: ConferenceUpdate, session: Se
     recalculate(conference, session)
     create_snapshot(conference, session, reason="manual update")
     session.commit()
-    return conference_payload(conference)
+    return conference_payload(conference, session)
 
 
 @router.post("/api/conferences/{conference_id}/refresh")
@@ -2287,7 +2341,7 @@ def refresh_conference(conference_id: str, session: Session = Depends(get_sessio
     recalculate(conference, session)
     create_snapshot(conference, session, reason="manual refresh")
     session.commit()
-    return conference_payload(conference)
+    return conference_payload(conference, session)
 
 
 @router.patch("/api/conferences/{conference_id}/milestones/{milestone_id}")
@@ -2307,7 +2361,7 @@ def update_conference_milestone(conference_id: str, milestone_id: str, payload: 
     recalculate(conference, session)
     create_snapshot(conference, session, reason="milestone status update")
     session.commit()
-    return conference_payload(conference)
+    return conference_payload(conference, session)
 
 
 @router.post("/api/conferences/{conference_id}/contacts", status_code=201)
@@ -2330,7 +2384,7 @@ def create_contact(conference_id: str, payload: ContactIn, session: Session = De
     recalculate(conference, session)
     create_snapshot(conference, session, reason="contact create")
     session.commit()
-    return conference_payload(conference)
+    return conference_payload(conference, session)
 
 
 @router.patch("/api/conferences/{conference_id}/contacts/{contact_id}")
@@ -2351,7 +2405,7 @@ def update_contact(conference_id: str, contact_id: str, payload: ContactUpdate, 
     recalculate(conference, session)
     create_snapshot(conference, session, reason="contact update")
     session.commit()
-    return conference_payload(conference)
+    return conference_payload(conference, session)
 
 
 @router.delete("/api/conferences/{conference_id}/contacts/{contact_id}")
@@ -2365,7 +2419,7 @@ def delete_contact(conference_id: str, contact_id: str, session: Session = Depen
     recalculate(conference, session)
     create_snapshot(conference, session, reason="contact delete")
     session.commit()
-    return conference_payload(conference)
+    return conference_payload(conference, session)
 
 
 @router.post("/api/conferences/{conference_id}/comments", status_code=201)
@@ -2376,7 +2430,7 @@ def add_conference_comment(conference_id: str, payload: ConferenceCommentIn, ses
     row = ConferenceComment(conference_id=conference.id, comment=payload.comment)
     session.add(row)
     session.commit()
-    return conference_payload(conference)
+    return conference_payload(conference, session)
 
 
 @router.patch("/api/conferences/{conference_id}/comments/{comment_id}")
@@ -2389,7 +2443,7 @@ def update_conference_comment(conference_id: str, comment_id: str, payload: Conf
     conference.comments = payload.comment
     conference.last_reviewed_date = date.today()
     session.commit()
-    return conference_payload(conference)
+    return conference_payload(conference, session)
 
 
 @router.delete("/api/conferences/{conference_id}/comments/{comment_id}")
@@ -2408,7 +2462,7 @@ def delete_conference_comment(conference_id: str, comment_id: str, session: Sess
     conference.comments = latest.comment if latest else None
     conference.last_reviewed_date = latest.updated_at.date() if latest else None
     session.commit()
-    return conference_payload(conference)
+    return conference_payload(conference, session)
 
 
 @router.post("/api/conferences/{conference_id}/archive")
@@ -2595,7 +2649,7 @@ def issue_recommendation(issue_id: str, session: Session = Depends(get_session))
 @router.post("/api/conferences/{conference_id}/generate-issues")
 def generate_conference_issues(conference_id: str, session: Session = Depends(get_session)) -> dict[str, Any]:
     conference = require_conference(session, conference_id)
-    payload = conference_payload(conference)
+    payload = conference_payload(conference, session)
     sources = retrieve_sources(
         ChatIn(
             question="IEEE conference governance finance publication MOU operations registration closure issue detection guidance",
@@ -2684,8 +2738,7 @@ def excel_template() -> Response:
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         pd.DataFrame([{"report_date": date.today().isoformat(), "report_title": "IEEE ITSS Portfolio Status", "source": "Local", "prepared_by": "", "notes": ""}]).to_excel(writer, index=False, sheet_name="Metadata")
         pd.DataFrame(columns=CONFERENCE_COLUMNS).to_excel(writer, index=False, sheet_name="Conferences")
-        pd.DataFrame(columns=CONTACT_COLUMNS).to_excel(writer, index=False, sheet_name="Contacts")
-        pd.DataFrame(columns=ISSUE_COLUMNS).to_excel(writer, index=False, sheet_name="Issues")
+        pd.DataFrame(columns=MILESTONE_COLUMNS).to_excel(writer, index=False, sheet_name="Milestones")
     return Response(output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=itss-status-template.xlsx"})
 
 
@@ -2824,26 +2877,8 @@ def rollback_import(batch_id: str, session: Session = Depends(get_session)) -> d
 def export_portfolio(session: Session = Depends(get_session)) -> Response:
     output = io.BytesIO()
     conference_rows = [conference_export_row(c) for c in session.scalars(select(Conference).order_by(Conference.year.desc()))]
-    issues = [issue_payload(i, session.get(Conference, i.conference_id)) for i in session.scalars(select(Issue))]
-    contacts = [
-        {
-            "conference_number": c.conference_number,
-            "acronym": c.acronym,
-            "year": c.year,
-            "contact_role": contact.role,
-            "name": contact.name,
-            "email": contact.email,
-            "organization": contact.organization,
-            "phone": contact.phone,
-            "is_primary": contact.is_primary,
-        }
-        for c in session.scalars(select(Conference).order_by(Conference.year.desc()))
-        for contact in c.contacts
-    ]
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         pd.DataFrame(conference_rows, columns=CONFERENCE_COLUMNS).to_excel(writer, index=False, sheet_name="Conferences")
-        pd.DataFrame(issues).to_excel(writer, index=False, sheet_name="Issues")
-        pd.DataFrame(contacts, columns=CONTACT_COLUMNS).to_excel(writer, index=False, sheet_name="Contacts")
         milestones = [
             {
                 "conference_number": normalize_record_number(c.conference_number),
@@ -2859,7 +2894,6 @@ def export_portfolio(session: Session = Depends(get_session)) -> Response:
             for cm in c.milestones
         ]
         pd.DataFrame(milestones, columns=MILESTONE_COLUMNS).to_excel(writer, index=False, sheet_name="Milestones")
-        pd.DataFrame([{"dimension": k, "weight": v} for k, v in SCORE_WEIGHTS.items()]).to_excel(writer, index=False, sheet_name="Score Settings")
     return Response(output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=itss-portfolio.xlsx"})
 
 
@@ -3072,7 +3106,7 @@ def chat(payload: ChatIn, session: Session = Depends(get_session)) -> dict[str, 
     ]
     db_context = ""
     if payload.conference_id:
-        db_context = json.dumps(conference_payload(require_conference(session, payload.conference_id)), default=str)
+        db_context = json.dumps(conference_payload(require_conference(session, payload.conference_id), session), default=str)
     prompt = (
         f"Mode: {payload.mode}\nQuestion: {payload.question}\nConference facts: {db_context}\n"
         f"Retrieved document excerpts: {json.dumps(prompt_sources)}\n"
@@ -3106,7 +3140,7 @@ def generate_email_draft(payload: EmailDraftIn, session: Session = Depends(get_s
     facts = {
         "conference": {
             key: value
-            for key, value in conference_payload(conference).items()
+            for key, value in conference_payload(conference, session).items()
             if key
             in {
                 "conference_number",
@@ -3442,7 +3476,13 @@ def recalculate_all_milestone_dates(payload: MilestoneDatesPayload | None = None
             anchor = str(offset.get("anchor", "start")).lower()
             months = int(offset.get("months", 0))
             days = int(offset.get("days", 0))
-            clean[code.upper()] = {"anchor": anchor if anchor in {"start", "end"} else "start", "months": months, "days": days}
+            warning_days = max(0, int(offset.get("warning_days", 0)))
+            clean[code.upper()] = {
+                "anchor": anchor if anchor in {"start", "end"} else "start",
+                "months": months,
+                "days": days,
+                "warning_days": warning_days,
+            }
         # Merge with defaults to keep any unspecified codes
         merged = dict(MILESTONE_DATE_DEFAULTS)
         merged.update(clean)
@@ -3485,7 +3525,7 @@ def require_issue(session: Session, issue_id: str) -> Issue:
 
 
 def create_snapshot(conference: Conference, session: Session, *, reason: str) -> Snapshot:
-    payload = conference_payload(conference)
+    payload = conference_payload(conference, session)
     payload["reason"] = reason
     snapshot = Snapshot(conference_id=conference.id, payload_json=json.dumps(payload, default=str))
     session.add(snapshot)
@@ -3493,68 +3533,33 @@ def create_snapshot(conference: Conference, session: Session, *, reason: str) ->
 
 
 CONFERENCE_COLUMNS = [
-    "report_date",
     "conference_number",
     "acronym",
     "year",
     "official_title",
     "conference_series",
-    "conference_category",
     "sponsorship_type",
     "lifecycle_phase",
     "conference_status",
     "start_date",
     "end_date",
-    "submission_deadline",
-    "notification_date",
-    "camera_ready_deadline",
     "city",
-    "state",
     "country",
-    "ieee_region",
     "estimated_attendees",
     "actual_attendees",
     "website",
-    "project_code",
     "application_status",
-    "application_submitted_date",
-    "application_approved_date",
     "mou_status",
-    "mou_signed_date",
-    "sponsor_summary",
-    "sponsor_percentage",
-    "application_comments",
     "finance_status",
-    "finance_report_type",
-    "finance_report_date",
-    "currency",
-    "total_income_current",
-    "total_expense_current",
+    "publication_status",
     "budgeted_income_total",
     "budgeted_expense_total",
-    "bank_account_status",
-    "payflow_status",
-    "budget_approval_status",
-    "accounting_close_date",
-    "financial_required_items",
-    "loan_status",
-    "certificate_of_accuracy_status",
-    "bank_closure_status",
-    "tax_vat_status",
-    "financial_comments",
-    "publication_form_status",
-    "publication_form_submitted_date",
-    "loa_status",
-    "loa_date",
-    "publication_status",
-    "media_type",
-    "media_received_date",
-    "xmldoc_date",
-    "proceedings_submitted_date",
-    "quality_review_status",
+    "total_income_current",
+    "total_expense_current",
+    "itss_loan_requested",
+    "itss_loan_amount",
     "xplore_posting_date",
-    "no_show_status",
-    "publication_comments",
+    "accounting_close_date",
     "overall_comments",
 ]
 CONTACT_COLUMNS = ["conference_number", "acronym", "year", "contact_role", "name", "email", "organization", "phone", "is_primary"]
@@ -3754,6 +3759,8 @@ IMPORT_FIELD_MAP = {
     "total_expense_current": "total_expense_current",
     "budgeted_income_total": "budgeted_income_total",
     "budgeted_expense_total": "budgeted_expense_total",
+    "itss_loan_requested": "itss_loan_requested",
+    "itss_loan_amount": "itss_loan_amount",
     "accounting_close_date": "accounting_close_date",
     "publication_status": "publication_status",
     "proceedings_submitted_date": "proceedings_submitted_date",
@@ -3776,7 +3783,14 @@ DATE_IMPORT_FIELDS = {
     "xplore_posting_date",
 }
 INTEGER_IMPORT_FIELDS = {"estimated_attendees", "actual_attendees"}
-MONEY_IMPORT_FIELDS = {"total_income_current", "total_expense_current", "budgeted_income_total", "budgeted_expense_total"}
+MONEY_IMPORT_FIELDS = {
+    "total_income_current",
+    "total_expense_current",
+    "budgeted_income_total",
+    "budgeted_expense_total",
+    "itss_loan_amount",
+}
+BOOLEAN_IMPORT_FIELDS = {"itss_loan_requested"}
 MILESTONE_FIELDS = {"status", "due_date", "comments"}
 _SKIP_IMPORT_VALUE = object()
 
@@ -3802,14 +3816,10 @@ def conference_export_row(conference: Conference) -> dict[str, Any]:
         row[column] = value.isoformat() if isinstance(value, date) else value
     row.update(
         {
-            "report_date": date.today().isoformat(),
             "acronym": conference.acronym,
             "year": conference.year,
             "official_title": conference.official_title,
             "conference_number": normalize_record_number(conference.conference_number),
-            "application_comments": conference.application_status_raw or "",
-            "financial_comments": "",
-            "publication_comments": "",
         }
     )
     return row
@@ -3909,6 +3919,13 @@ def import_value_for_field(field: str, raw: Any, session: Session) -> Any:
         return int(float(value))
     if field in MONEY_IMPORT_FIELDS:
         return float(str(value).replace(",", ""))
+    if field in BOOLEAN_IMPORT_FIELDS:
+        normalized = str(value).strip().lower()
+        if normalized in {"true", "yes", "1", "y"}:
+            return True
+        if normalized in {"false", "no", "0", "n"}:
+            return False
+        raise ValueError("must be Yes/No or True/False")
     return value
 
 

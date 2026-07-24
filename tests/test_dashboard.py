@@ -42,6 +42,65 @@ def test_first_run_creates_database_and_reference_data(tmp_path: Path, monkeypat
         assert (tmp_path / "data" / "itss_dashboard.db").exists()
 
 
+def test_series_editing_compact_export_and_date_timeliness(tmp_path: Path, monkeypatch) -> None:
+    with _client(tmp_path, monkeypatch) as client:
+        settings = client.get("/api/settings").json()
+        series = settings["reference_config"]["conference_series"]
+        itsc = next(item for item in series if item["code"] == "ITSC")
+        itsc["name"] = "Editable ITSC Display Name"
+        saved = client.patch(
+            "/api/settings/reference-config",
+            json={"reference_config": {"conference_series": series}},
+        )
+        assert saved.status_code == 200
+        saved_itsc = next(
+            item
+            for item in saved.json()["reference_config"]["conference_series"]
+            if item["code"] == "ITSC"
+        )
+        assert saved_itsc["name"] == "Editable ITSC Display Name"
+
+        created = client.post(
+            "/api/conferences",
+            json={
+                "conference_number": "99001",
+                "acronym": "DATE",
+                "year": 2025,
+                "official_title": "Date Status Test",
+                "conference_series": "ITSC",
+                "sponsorship_type": "Financially Sponsored",
+                "lifecycle_phase": "Detailed Planning",
+                "start_date": "2025-06-27",
+                "end_date": "2025-06-30",
+            },
+        )
+        conference_id = created.json()["id"]
+        updated = client.patch(
+            f"/api/conferences/{conference_id}",
+            json={
+                "xplore_posting_date": "2025-09-10",
+                "accounting_close_date": "2026-07-01",
+            },
+        )
+        assert updated.status_code == 200
+        assert updated.json()["publication_timeliness"]["state"] == "warning"
+        assert updated.json()["accounting_close_timeliness"]["state"] == "late"
+
+        exported = client.get("/api/exports/portfolio.xlsx")
+        workbook = pd.ExcelFile(io.BytesIO(exported.content))
+        assert workbook.sheet_names == ["Conferences", "Milestones"]
+        columns = set(pd.read_excel(workbook, sheet_name="Conferences").columns)
+        assert {
+            "conference_number",
+            "conference_series",
+            "itss_loan_requested",
+            "xplore_posting_date",
+            "accounting_close_date",
+        }.issubset(columns)
+        assert "publication_comments" not in columns
+        assert "finance_report_type" not in columns
+
+
 def test_conference_can_be_created_and_scored(tmp_path: Path, monkeypatch) -> None:
     with _client(tmp_path, monkeypatch) as client:
         response = client.post(

@@ -40,7 +40,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { useAccess } from "@/hooks/useAccess";
 import { api } from "@/lib/api";
-import type { AppSettings, Comment, Conference, Contact, FinanceSnapshot, Milestone } from "@/types/conference";
+import type { AppSettings, Comment, Conference, Contact, DateTimeliness, FinanceSnapshot, Milestone } from "@/types/conference";
 
 const STATUS_COLORS: Record<string, string> = {
   unknown: "default",
@@ -135,6 +135,25 @@ function fact(label: string, value: ReactNode) {
   );
 }
 
+function timelinessFact(dateValue?: string | null, timeliness?: DateTimeliness) {
+  const colors: Record<DateTimeliness["state"], string> = {
+    on_time: "green",
+    pending: "blue",
+    warning: "gold",
+    late: "red",
+    unknown: "default",
+  };
+  return (
+    <div className="date-timeliness">
+      <span>{dateLabel(dateValue)}</span>
+      <Tag color={colors[timeliness?.state ?? "unknown"]}>
+        {timeliness?.label ?? "Not assessed"}
+      </Tag>
+      {timeliness?.due_date && <small>Due {dateLabel(timeliness.due_date)}</small>}
+    </div>
+  );
+}
+
 export default function ConferenceDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -179,6 +198,15 @@ export default function ConferenceDetail() {
     "Information Contact",
     "Other",
   ];
+  const conferenceSeries = (settings?.reference_config?.conference_series ?? []) as {
+    code: string;
+    name: string;
+    flagship: boolean;
+  }[];
+  const conferenceSeriesOptions = conferenceSeries.map((item) => ({
+    label: `${item.code} - ${item.name}`,
+    value: item.code,
+  }));
 
   const loadConference = async () => {
     if (!id) return;
@@ -248,9 +276,13 @@ export default function ConferenceDetail() {
       : null;
 
   const openFactEditor = () => {
+    const configuredSeries = conferenceSeries.find(
+      (item) => item.code === conference.conference_series || item.name === conference.conference_series,
+    );
     factForm.setFieldsValue({
       official_title: conference.official_title,
       conference_number: recordLabel(conference.conference_number),
+      conference_series: configuredSeries?.code ?? conference.conference_series,
       start_date: conference.start_date ?? "",
       end_date: conference.end_date ?? "",
       city: conference.city ?? "",
@@ -264,6 +296,8 @@ export default function ConferenceDetail() {
       budgeted_expense_total: conference.budgeted_expense_total ?? undefined,
       itss_loan_requested: Boolean(conference.itss_loan_requested),
       itss_loan_amount: conference.itss_loan_amount ?? undefined,
+      xplore_posting_date: conference.xplore_posting_date ?? "",
+      accounting_close_date: conference.accounting_close_date ?? "",
       comments: conference.comments ?? "",
       committee_contact: conference.committee_contact ?? "",
       change_comment: "",
@@ -280,11 +314,14 @@ export default function ConferenceDetail() {
         ...values,
         official_title: emptyToNull(values.official_title),
         conference_number: emptyToNull(values.conference_number),
+        conference_series: emptyToNull(values.conference_series),
         start_date: emptyToNull(values.start_date),
         end_date: emptyToNull(values.end_date),
         city: emptyToNull(values.city),
         country: emptyToNull(values.country),
         website: emptyToNull(values.website),
+        xplore_posting_date: emptyToNull(values.xplore_posting_date),
+        accounting_close_date: emptyToNull(values.accounting_close_date),
         comments: emptyToNull(values.comments),
         committee_contact: emptyToNull(values.committee_contact),
         change_comment: emptyToNull(values.change_comment),
@@ -647,9 +684,11 @@ export default function ConferenceDetail() {
                 {fact("MOU", statusTag(conference.mou_status))}
                 {fact("Finance", statusTag(conference.finance_status))}
                 {fact("Publication", statusTag(conference.publication_status))}
-                {fact("Account Close", dateLabel(conference.accounting_close_date))}
+                {fact("Publication Date", timelinessFact(conference.xplore_posting_date, conference.publication_timeliness))}
+                {fact("Conference Closure Date", timelinessFact(conference.accounting_close_date, conference.accounting_close_timeliness))}
                 {fact("Dates", dateRange)}
                 {fact("Location", location)}
+                {fact("Conference Series", conference.conference_series || "-")}
                 {fact("Sponsorship", conference.sponsorship_type || "-")}
                 {fact("ITSS Loan Requested", conference.itss_loan_requested ? "Yes" : "No")}
                 {fact("ITSS Loan Amount", moneyLabel(conference.itss_loan_amount))}
@@ -815,6 +854,15 @@ export default function ConferenceDetail() {
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
+              <Form.Item name="conference_series" label="Conference Series">
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  options={conferenceSeriesOptions}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
               <Form.Item name="start_date" label="Start Date">
                 <Input type="date" />
               </Form.Item>
@@ -847,6 +895,16 @@ export default function ConferenceDetail() {
             <Col xs={24} md={12}>
               <Form.Item name="actual_attendees" label="Actual Attendees">
                 <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="xplore_posting_date" label="Publication Date">
+                <Input type="date" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="accounting_close_date" label="Conference Closure Date">
+                <Input type="date" />
               </Form.Item>
             </Col>
             <Col xs={24}>

@@ -114,9 +114,11 @@ export interface Conference {
   itss_loan_requested?: boolean;
   itss_loan_amount?: number | null;
   accounting_close_date?: string | null;
+  accounting_close_timeliness?: DateTimeliness;
   publication_status?: string;
   proceedings_submitted_date?: string | null;
   xplore_posting_date?: string | null;
+  publication_timeliness?: DateTimeliness;
   score: number;
   base_score: number;
   issue_penalty: number;
@@ -159,7 +161,7 @@ export interface FinanceSnapshot {
 export interface ReferenceData {
   committee_members: string[];
   lifecycle_phases: { name: string; display_name: string; description: string }[];
-  conference_series: string[];
+  conference_series: { code: string; name: string; flagship: boolean }[];
   sponsorship_types: string[];
   conference_categories: string[];
   milestone_templates: { milestone_type: string; display_name: string; description: string; default_offset_days: number; phase_applicability: string[] }[];
@@ -184,6 +186,14 @@ export interface AppSettings {
   reference_config?: Record<string, any[]>;
   reference_config_labels?: Record<string, string>;
   llm_config: Record<string, any>;
+}
+
+export interface DateTimeliness {
+  state: "on_time" | "pending" | "warning" | "late" | "unknown";
+  label: string;
+  due_date?: string | null;
+  days_from_due?: number | null;
+  warning_days: number;
 }
 
 export interface Document {

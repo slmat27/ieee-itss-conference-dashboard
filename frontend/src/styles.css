@@ -1135,6 +1135,29 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.date-timeliness {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.date-timeliness > span {
+  color: var(--iav-b0);
+  font-size: 13px;
+}
+
+.date-timeliness .ant-tag {
+  margin-inline-end: 0;
+}
+
+.date-timeliness small {
+  flex-basis: 100%;
+  color: var(--iav-g4);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .milestone-title-cell {
   display: grid;
   gap: 4px;
@@ -1458,6 +1481,60 @@ h3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 14px;
+}
+
+.conference-series-editor {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  background: #f8fbff;
+  border: 1px solid rgba(0, 26, 84, 0.1);
+  border-radius: 8px;
+}
+
+.conference-series-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.conference-series-editor-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.conference-series-labels,
+.conference-series-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) minmax(240px, 2.6fr) 82px 58px;
+  gap: 10px;
+  align-items: center;
+}
+
+.conference-series-labels {
+  padding-inline: 1px;
+  color: var(--iav-g4);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.conference-series-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.conference-series-row {
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 26, 84, 0.08);
+  border-radius: 8px;
+}
+
+.conference-series-row .ant-switch {
+  justify-self: start;
 }
 
 .reference-config-card {
@@ -1906,5 +1983,23 @@ h3 {
 
   .financial-events-toolbar .ant-select {
     width: 100%;
+  }
+
+  .conference-series-editor-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .conference-series-labels {
+    display: none;
+  }
+
+  .conference-series-row {
+    grid-template-columns: minmax(0, 1fr) 54px 42px;
+  }
+
+  .conference-series-row > :nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 }
