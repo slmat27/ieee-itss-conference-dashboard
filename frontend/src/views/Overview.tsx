@@ -20,6 +20,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { Stack } from "@/components/ui";
 import { api } from "@/lib/api";
+import { lifecyclePhaseColor } from "@/lib/conference-visuals";
 import type { Conference, ConferenceSummary } from "@/types/conference";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -48,7 +49,6 @@ const SPONSORSHIP_COLORS: Record<string, string> = {
   "technically co-sponsored": "#dc46f3",
 };
 
-const PHASE_COLORS = ["#0091ff", "#28a000", "#ff9000", "#ff4d4f", "#5500b4", "#696969"];
 const CARD_WINDOW_SIZE = 4;
 const DEFAULT_EVENT_YEAR = 2026;
 const FLAGSHIP_SERIES = [
@@ -547,8 +547,8 @@ export default function Overview() {
                         stroke="#ffffff"
                         strokeWidth={3}
                       >
-                        {phaseData.map((entry, index) => (
-                          <Cell key={entry.name} fill={PHASE_COLORS[index % PHASE_COLORS.length]} />
+                        {phaseData.map((entry) => (
+                          <Cell key={entry.name} fill={lifecyclePhaseColor(entry.name)} />
                         ))}
                       </Pie>
                       <Tooltip
@@ -569,7 +569,7 @@ export default function Overview() {
                 {renderChartLegend(
                   phaseData,
                   phaseTotal,
-                  (_entry, index) => PHASE_COLORS[index % PHASE_COLORS.length],
+                  (entry) => lifecyclePhaseColor(entry.name),
                   (entry) => navigate(`/conferences?phase=${encodeURIComponent(entry.name)}`),
                 )}
               </div>

@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { api } from "@/lib/api";
+import { lifecyclePhaseColor } from "@/lib/conference-visuals";
 import type { Conference } from "@/types/conference";
 
 interface ItemResponse<T> {
@@ -169,7 +170,11 @@ export default function Conferences() {
         dataIndex: "lifecycle_phase",
         width: 150,
         sorter: (a, b) => textValue(a.lifecycle_phase).localeCompare(textValue(b.lifecycle_phase)),
-        render: (value: string) => <Tag>{value || "-"}</Tag>,
+        render: (value: string) => (
+          <Tag className="status-tag-wrap" color={lifecyclePhaseColor(value)}>
+            {value || "-"}
+          </Tag>
+        ),
       },
       {
         title: "Conference Status",
