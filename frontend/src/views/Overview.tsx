@@ -443,9 +443,9 @@ export default function Overview() {
         </div>
       </section>
 
-      <Row gutter={[16, 16]}>
+      <Row gutter={[16, 16]} className="overview-metric-row">
         <Col xs={24} sm={12} xl={6}>
-          <Card className="overview-metric-card">
+          <Card className="overview-metric-card is-records">
             <Statistic title="Portfolio Records" value={summary.conference_count} prefix={<BankOutlined />} />
           </Card>
         </Col>

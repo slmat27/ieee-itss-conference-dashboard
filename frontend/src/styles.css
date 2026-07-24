@@ -700,9 +700,26 @@ h3 {
   border-color: #ffffff !important;
 }
 
+.overview-metric-row > .ant-col {
+  display: flex;
+}
+
 .overview-metric-card {
-  min-height: 132px;
-  border-top: 3px solid var(--iav-b3);
+  width: 100%;
+  height: 132px;
+  border-top: 3px solid #1677ff;
+}
+
+.overview-metric-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.overview-metric-card.is-records {
+  border-top-color: #1677ff;
 }
 
 .overview-metric-card.is-alert {
@@ -710,7 +727,7 @@ h3 {
 }
 
 .overview-metric-card.is-score {
-  border-top-color: #28a000;
+  border-top-color: #ff9000;
 }
 
 .overview-metric-card.is-surplus {
