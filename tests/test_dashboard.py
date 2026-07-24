@@ -189,6 +189,74 @@ def test_conference_can_be_created_and_scored(tmp_path: Path, monkeypatch) -> No
         assert duplicate.status_code == 409
 
 
+def test_ai_issue_generation_reviews_watchlist_and_skips_duplicates(tmp_path: Path, monkeypatch) -> None:
+    with _client(tmp_path, monkeypatch) as client:
+        conferences = {}
+        for index, acronym in enumerate(("RISK", "ATTN", "TRACK"), start=1):
+            response = client.post(
+                "/api/conferences",
+                json={
+                    "conference_number": f"9920{index}",
+                    "acronym": acronym,
+                    "year": 2028,
+                    "official_title": f"{acronym} Conference",
+                    "conference_series": "Custom Conference Series",
+                    "sponsorship_type": "Financially Sponsored",
+                    "lifecycle_phase": "Detailed Planning",
+                },
+            )
+            assert response.status_code == 201
+            conferences[acronym] = response.json()["id"]
+
+        assert dashboard._state is not None
+        with dashboard._state.session_factory() as session:
+            session.get(dashboard.Conference, conferences["RISK"]).conference_status = "At Risk"
+            session.get(dashboard.Conference, conferences["ATTN"]).conference_status = "Attention Needed"
+            session.get(dashboard.Conference, conferences["TRACK"]).conference_status = "On Track"
+            session.commit()
+
+        monkeypatch.setattr(dashboard, "retrieve_sources", lambda payload, session: [])
+
+        def fake_llm(**kwargs):
+            if '"canonical_name": "ATTN 2028"' in kwargs["user_prompt"]:
+                raise RuntimeError("simulated provider error")
+            return json.dumps(
+                {
+                    "issues": [
+                        {
+                            "title": "Confirm overdue governance approval",
+                            "description": "The approval milestone requires follow-up.",
+                            "category": "Governance",
+                            "severity": "High",
+                            "review_assessment": "Needs Follow-up",
+                        }
+                    ]
+                }
+            )
+
+        monkeypatch.setattr(dashboard, "llm_chat_completion_text", fake_llm)
+        generated = client.post("/api/issues/generate-from-watchlist")
+        assert generated.status_code == 200
+        summary = generated.json()
+        assert summary["reviewed"] == 2
+        assert summary["created"] == 1
+        assert summary["failed"] == 1
+        assert {item["conference_name"] for item in summary["results"]} == {
+            "RISK 2028",
+            "ATTN 2028",
+        }
+
+        duplicate = client.post(f"/api/conferences/{conferences['RISK']}/generate-issues")
+        assert duplicate.status_code == 200
+        assert duplicate.json()["created"] == 0
+        assert duplicate.json()["skipped_duplicates"] == 1
+
+        issues = client.get("/api/issues").json()["items"]
+        assert len(issues) == 1
+        assert issues[0]["conference_id"] == conferences["RISK"]
+        assert issues[0]["source_type"] == "LLM"
+
+
 def test_dashboard_average_surplus_uses_actual_financials_only(tmp_path: Path, monkeypatch) -> None:
     with _client(tmp_path, monkeypatch) as client:
         conference_ids = []

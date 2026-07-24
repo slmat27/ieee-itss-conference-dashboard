@@ -2704,6 +2704,86 @@ def issue_recommendation(issue_id: str, session: Session = Depends(get_session))
 @router.post("/api/conferences/{conference_id}/generate-issues")
 def generate_conference_issues(conference_id: str, session: Session = Depends(get_session)) -> dict[str, Any]:
     conference = require_conference(session, conference_id)
+    created, skipped_duplicates = generate_issues_for_conference(conference, session)
+    recalculate(conference, session)
+    session.commit()
+    return {
+        "created": len(created),
+        "skipped_duplicates": skipped_duplicates,
+        "items": [issue_payload(issue, conference) for issue in created],
+    }
+
+
+@router.post("/api/issues/generate-from-watchlist")
+def generate_watchlist_issues(session: Session = Depends(get_session)) -> dict[str, Any]:
+    eligible_statuses = ("Attention Needed", "At Risk")
+    conferences = list(
+        session.scalars(
+            select(Conference)
+            .where(
+                Conference.active.is_(True),
+                Conference.conference_status.in_(eligible_statuses),
+            )
+            .order_by(Conference.year.desc(), Conference.acronym.asc())
+        )
+    )
+    results: list[dict[str, Any]] = []
+    created_total = 0
+    no_issue_count = 0
+    failed_count = 0
+    duplicate_total = 0
+
+    for conference in conferences:
+        reviewed_status = conference.conference_status
+        try:
+            created, skipped_duplicates = generate_issues_for_conference(conference, session)
+            recalculate(conference, session)
+            created_total += len(created)
+            duplicate_total += skipped_duplicates
+            if not created:
+                no_issue_count += 1
+            results.append(
+                {
+                    "conference_id": conference.id,
+                    "conference_name": conference.canonical_name,
+                    "conference_status": reviewed_status,
+                    "updated_status": conference.conference_status,
+                    "created": len(created),
+                    "skipped_duplicates": skipped_duplicates,
+                    "status": "created" if created else "no_new_issues",
+                }
+            )
+        except (HTTPException, RuntimeError) as exc:
+            failed_count += 1
+            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            results.append(
+                {
+                    "conference_id": conference.id,
+                    "conference_name": conference.canonical_name,
+                    "conference_status": reviewed_status,
+                    "created": 0,
+                    "skipped_duplicates": 0,
+                    "status": "failed",
+                    "error": str(detail),
+                }
+            )
+
+    session.commit()
+    return {
+        "eligible_statuses": list(eligible_statuses),
+        "reviewed": len(conferences),
+        "created": created_total,
+        "no_new_issues": no_issue_count,
+        "failed": failed_count,
+        "skipped_duplicates": duplicate_total,
+        "results": results,
+    }
+
+
+def generate_issues_for_conference(
+    conference: Conference,
+    session: Session,
+) -> tuple[list[Issue], int]:
     payload = conference_payload(conference, session)
     sources = retrieve_sources(
         ChatIn(
@@ -2763,8 +2843,22 @@ def generate_conference_issues(conference_id: str, session: Session = Depends(ge
     except RuntimeError as exc:
         raise HTTPException(503, f"LLM issue generation failed: {exc}") from exc
     generated = parse_generated_issues(raw, session)
+    active_titles = {
+        normalize_issue_title(issue.title)
+        for issue in session.scalars(
+            select(Issue).where(
+                Issue.conference_id == conference.id,
+                Issue.active.is_(True),
+            )
+        )
+    }
     created: list[Issue] = []
+    skipped_duplicates = 0
     for item in generated:
+        normalized_title = normalize_issue_title(item.title)
+        if normalized_title in active_titles:
+            skipped_duplicates += 1
+            continue
         issue = Issue(
             conference_id=conference.id,
             issue_key=f"{conference.canonical_name}-LLM-{uuid.uuid4().hex[:8]}",
@@ -2780,11 +2874,10 @@ def generate_conference_issues(conference_id: str, session: Session = Depends(ge
             owner=item.owner,
             due_date=item.due_date,
         )
-        session.add(issue)
+        conference.issues.append(issue)
         created.append(issue)
-    recalculate(conference, session)
-    session.commit()
-    return {"created": len(created), "items": [issue_payload(issue, conference) for issue in created]}
+        active_titles.add(normalized_title)
+    return created, skipped_duplicates
 
 
 @router.get("/api/imports/template.xlsx")
@@ -4801,6 +4894,10 @@ def parse_email_generation(generated: str) -> dict[str, str] | None:
     if not isinstance(subject, str) and not isinstance(body, str):
         return None
     return {"subject": subject if isinstance(subject, str) else "", "body": body if isinstance(body, str) else ""}
+
+
+def normalize_issue_title(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
 
 def parse_generated_issues(generated: str, session: Session) -> list[GeneratedIssue]:
