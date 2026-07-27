@@ -1909,6 +1909,8 @@ class ChatIn(BaseModel):
 
 class SettingsUpdate(BaseModel):
     portfolio_start_year: int | None = None
+    kpi_from_year: int | None = Field(default=None, ge=1900, le=2200)
+    kpi_to_year: int | None = Field(default=None, ge=1900, le=2200)
     score_weights: dict[str, float] | None = None
     score_settings: dict[str, Any] | None = None
     status_mappings: dict[str, str] | None = None
@@ -2183,10 +2185,64 @@ def configured_value(session: Session, key: str, value: str | None) -> str:
     return "Unknown"
 
 
+def available_conference_years(session: Session) -> list[int]:
+    return list(
+        session.scalars(
+            select(Conference.year)
+            .where(Conference.active.is_(True))
+            .distinct()
+            .order_by(Conference.year.asc())
+        )
+    )
+
+
+def kpi_year_range(
+    session: Session,
+    conferences: list[Conference] | None = None,
+) -> tuple[int, int]:
+    setting = session.get(DashboardSettings, "kpi_year_range")
+    if setting:
+        try:
+            value = json.loads(setting.value_json)
+            from_year = int(value["from"])
+            to_year = int(value["to"])
+            if 1900 <= from_year <= to_year <= 2200:
+                return from_year, to_year
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+    years = (
+        sorted({conference.year for conference in conferences})
+        if conferences is not None
+        else available_conference_years(session)
+    )
+    if years:
+        return years[0], years[-1]
+    current_year = date.today().year
+    return current_year, current_year
+
+
 @router.get("/api/dashboard/summary")
 def dashboard_summary(session: Session = Depends(get_session)) -> dict[str, Any]:
     conferences = list(session.scalars(select(Conference).where(Conference.active.is_(True))))
-    issues = list(session.scalars(select(Issue).where(Issue.active.is_(True))))
+    kpi_from_year, kpi_to_year = kpi_year_range(session, conferences)
+    kpi_conferences = [
+        conference
+        for conference in conferences
+        if kpi_from_year <= conference.year <= kpi_to_year
+    ]
+    kpi_conference_ids = [conference.id for conference in kpi_conferences]
+    issues = (
+        list(
+            session.scalars(
+                select(Issue).where(
+                    Issue.active.is_(True),
+                    Issue.conference_id.in_(kpi_conference_ids),
+                )
+            )
+        )
+        if kpi_conference_ids
+        else []
+    )
     flagship_cards: list[dict[str, Any]] = []
     flagship_groups: dict[str, list[dict[str, Any]]] = {"ITSC": [], "IV": []}
     for conf in sorted(conferences, key=lambda item: (item.normalized_acronym, item.year), reverse=True):
@@ -2196,25 +2252,31 @@ def dashboard_summary(session: Session = Depends(get_session)) -> dict[str, Any]
         flagship_cards.append(item)
         flagship_groups[conf.normalized_acronym].append(item)
     actual_surplus_pcts = []
-    for conf in conferences:
+    for conf in kpi_conferences:
         income = conf.total_income_current
         expense = conf.total_expense_current
         if income is not None and expense is not None and expense != 0:
             actual_surplus_pcts.append(((income - expense) / expense) * 100)
     return {
-        "conference_count": len(conferences),
+        "conference_count": len(kpi_conferences),
         "open_issue_count": len(issues),
         "critical_issue_count": sum(1 for item in issues if item.severity == "Critical"),
-        "average_score": round(sum(c.score for c in conferences) / len(conferences), 1) if conferences else 0,
+        "average_score": (
+            round(sum(c.score for c in kpi_conferences) / len(kpi_conferences), 1)
+            if kpi_conferences
+            else 0
+        ),
         "average_surplus_percentage": (
             round(sum(actual_surplus_pcts) / len(actual_surplus_pcts), 1)
             if actual_surplus_pcts
             else None
         ),
         "actual_surplus_conference_count": len(actual_surplus_pcts),
-        "status_counts": dict(Counter(c.conference_status for c in conferences)),
-        "health_counts": dict(Counter(c.status_band for c in conferences)),
-        "phase_counts": dict(Counter(c.lifecycle_phase for c in conferences)),
+        "status_counts": dict(Counter(c.conference_status for c in kpi_conferences)),
+        "health_counts": dict(Counter(c.status_band for c in kpi_conferences)),
+        "phase_counts": dict(Counter(c.lifecycle_phase for c in kpi_conferences)),
+        "kpi_from_year": kpi_from_year,
+        "kpi_to_year": kpi_to_year,
         "flagship_cards": flagship_cards,
         "flagship_groups": flagship_groups,
         "last_source_update": max((c.last_source_update for c in conferences if c.last_source_update), default=None),
@@ -3386,6 +3448,8 @@ def settings(session: Session = Depends(get_session)) -> dict[str, Any]:
     role_setting = session.get(DashboardSettings, "role_permissions")
     role_permissions = merged_role_permissions(json.loads(role_setting.value_json) if role_setting else None)
     config = reference_config(session)
+    available_years = available_conference_years(session)
+    kpi_from_year, kpi_to_year = kpi_year_range(session)
     mappings = {m.source_value: m.normalized_value for m in session.scalars(select(StatusMapping).where(StatusMapping.active.is_(True)))}
     return {
         "azure_openai": azure_status(mask=True),
@@ -3393,6 +3457,9 @@ def settings(session: Session = Depends(get_session)) -> dict[str, Any]:
         "score_weights": score_weights,
         "score_settings": scoring,
         "portfolio_start_year": portfolio_start_year,
+        "kpi_from_year": kpi_from_year,
+        "kpi_to_year": kpi_to_year,
+        "kpi_available_years": available_years,
         "status_mappings": mappings,
         "feature_flags": feature_flags,
         "role_permissions": role_permissions,
@@ -3410,6 +3477,18 @@ def update_settings(payload: SettingsUpdate, session: Session = Depends(get_sess
     if payload.portfolio_start_year is not None:
         setting = session.get(DashboardSettings, "portfolio_start_year")
         setting.value_json = json.dumps(payload.portfolio_start_year)
+    if payload.kpi_from_year is not None or payload.kpi_to_year is not None:
+        current_from, current_to = kpi_year_range(session)
+        kpi_from_year = payload.kpi_from_year if payload.kpi_from_year is not None else current_from
+        kpi_to_year = payload.kpi_to_year if payload.kpi_to_year is not None else current_to
+        if kpi_from_year > kpi_to_year:
+            raise HTTPException(422, "KPI From year must be earlier than or equal to the To year.")
+        setting = session.get(DashboardSettings, "kpi_year_range")
+        value_json = json.dumps({"from": kpi_from_year, "to": kpi_to_year})
+        if setting:
+            setting.value_json = value_json
+        else:
+            session.add(DashboardSettings(key="kpi_year_range", value_json=value_json))
     if payload.score_weights is not None:
         setting = session.get(DashboardSettings, "score_weights")
         setting.value_json = json.dumps(payload.score_weights)

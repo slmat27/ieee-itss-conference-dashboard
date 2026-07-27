@@ -443,6 +443,14 @@ export default function Overview() {
         </div>
       </section>
 
+      <div className="overview-kpi-period">
+        <CalendarOutlined />
+        <span>
+          KPI reporting period: <strong>{summary.kpi_from_year} - {summary.kpi_to_year}</strong>
+        </span>
+        <Link to="/settings">Change in Settings</Link>
+      </div>
+
       <Row gutter={[16, 16]} className="overview-metric-row">
         <Col xs={24} sm={12} xl={6}>
           <Card className="overview-metric-card is-records">

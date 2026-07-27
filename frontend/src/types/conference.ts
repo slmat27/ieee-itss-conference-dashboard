@@ -138,6 +138,8 @@ export interface ConferenceSummary {
   average_score: number;
   average_surplus_percentage: number;
   actual_surplus_conference_count: number;
+  kpi_from_year: number;
+  kpi_to_year: number;
   status_counts: Record<string, number>;
   health_counts?: Record<string, number>;
   phase_counts: Record<string, number>;
@@ -175,6 +177,9 @@ export interface AppSettings {
   embeddings?: Record<string, any>;
   score_weights?: Record<string, number>;
   portfolio_start_year?: number;
+  kpi_from_year?: number;
+  kpi_to_year?: number;
+  kpi_available_years?: number[];
   status_mappings?: Record<string, string>;
   milestone_date_defaults: Record<string, any>;
   score_settings: Record<string, any>;

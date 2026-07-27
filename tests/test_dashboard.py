@@ -294,6 +294,73 @@ def test_dashboard_average_surplus_uses_actual_financials_only(tmp_path: Path, m
         assert summary["actual_surplus_conference_count"] == 2
 
 
+def test_overview_kpi_period_is_persisted_and_filters_summary(tmp_path: Path, monkeypatch) -> None:
+    with _client(tmp_path, monkeypatch) as client:
+        created = {}
+        for index, (acronym, year, series) in enumerate(
+            (("ITSC", 2024, "ITSC"), ("IV", 2028, "IV"), ("FUTURE", 2030, "Custom Conference Series")),
+            start=1,
+        ):
+            response = client.post(
+                "/api/conferences",
+                json={
+                    "conference_number": f"8810{index}",
+                    "acronym": acronym,
+                    "year": year,
+                    "official_title": f"{acronym} KPI Period Test",
+                    "conference_series": series,
+                    "sponsorship_type": "Flagship" if series in {"ITSC", "IV"} else "Financially Sponsored",
+                    "lifecycle_phase": "Detailed Planning",
+                },
+            )
+            assert response.status_code == 201
+            created[year] = response.json()
+
+        for year in (2024, 2028):
+            issue = client.post(
+                "/api/issues",
+                json={
+                    "conference_id": created[year]["id"],
+                    "title": f"{year} follow-up",
+                    "category": "Operations",
+                    "severity": "Medium",
+                },
+            )
+            assert issue.status_code == 201
+
+        initial_settings = client.get("/api/settings").json()
+        assert initial_settings["kpi_from_year"] == 2024
+        assert initial_settings["kpi_to_year"] == 2030
+        assert initial_settings["kpi_available_years"] == [2024, 2028, 2030]
+
+        saved = client.patch(
+            "/api/settings",
+            json={"kpi_from_year": 2028, "kpi_to_year": 2030},
+        )
+        assert saved.status_code == 200
+        assert saved.json()["kpi_from_year"] == 2028
+        assert saved.json()["kpi_to_year"] == 2030
+
+        persisted = client.get("/api/settings").json()
+        assert persisted["kpi_from_year"] == 2028
+        assert persisted["kpi_to_year"] == 2030
+
+        summary = client.get("/api/dashboard/summary").json()
+        assert summary["kpi_from_year"] == 2028
+        assert summary["kpi_to_year"] == 2030
+        assert summary["conference_count"] == 2
+        assert summary["open_issue_count"] == 1
+        assert sum(summary["status_counts"].values()) == 2
+        assert sum(summary["phase_counts"].values()) == 2
+        assert {item["year"] for item in summary["flagship_cards"]} == {2024, 2028}
+
+        invalid = client.patch(
+            "/api/settings",
+            json={"kpi_from_year": 2030, "kpi_to_year": 2028},
+        )
+        assert invalid.status_code == 422
+
+
 def test_conference_status_uses_score_without_overdue_override(monkeypatch) -> None:
     monkeypatch.setattr(
         dashboard,

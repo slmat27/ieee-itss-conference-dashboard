@@ -417,6 +417,8 @@ export default function Settings() {
             onClick={() =>
               saveSettings({
                 portfolio_start_year: settings.portfolio_start_year,
+                kpi_from_year: settings.kpi_from_year,
+                kpi_to_year: settings.kpi_to_year,
                 score_settings: settings.score_settings,
                 status_mappings: settings.status_mappings,
                 feature_flags: settings.feature_flags,
@@ -640,6 +642,73 @@ export default function Settings() {
         <Col xs={24} xl={9}>
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
             <Card className="settings-panel" title={<><SlidersOutlined /> Portfolio Defaults</>}>
+              <div className="settings-kpi-period">
+                <div className="settings-kpi-period-copy">
+                  <strong>Overview KPI reporting period</strong>
+                  <span>
+                    Limits the overview metrics and status/lifecycle charts to conferences within this inclusive year range.
+                  </span>
+                </div>
+                <div className="settings-kpi-period-controls">
+                  <label>
+                    <span>From</span>
+                    <Select
+                      value={settings.kpi_from_year}
+                      options={Array.from(
+                        new Set([
+                          ...(settings.kpi_available_years ?? []),
+                          settings.kpi_from_year,
+                          settings.kpi_to_year,
+                        ].filter((year): year is number => typeof year === "number")),
+                      )
+                        .sort((left, right) => left - right)
+                        .map((year) => ({ label: String(year), value: year }))}
+                      onChange={(year) =>
+                        setSettings({
+                          ...settings,
+                          kpi_from_year: year,
+                          kpi_to_year: Math.max(year, settings.kpi_to_year ?? year),
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>To</span>
+                    <Select
+                      value={settings.kpi_to_year}
+                      options={Array.from(
+                        new Set([
+                          ...(settings.kpi_available_years ?? []),
+                          settings.kpi_from_year,
+                          settings.kpi_to_year,
+                        ].filter((year): year is number => typeof year === "number")),
+                      )
+                        .sort((left, right) => left - right)
+                        .map((year) => ({ label: String(year), value: year }))}
+                      onChange={(year) =>
+                        setSettings({
+                          ...settings,
+                          kpi_from_year: Math.min(settings.kpi_from_year ?? year, year),
+                          kpi_to_year: year,
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined />}
+                  loading={saving}
+                  onClick={() =>
+                    saveSettings({
+                      kpi_from_year: settings.kpi_from_year,
+                      kpi_to_year: settings.kpi_to_year,
+                    })
+                  }
+                >
+                  Save KPI Period
+                </Button>
+              </div>
               <div className="settings-control-row">
                 <div>
                   <strong>Default portfolio start year</strong>
