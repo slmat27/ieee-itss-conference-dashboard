@@ -6,6 +6,7 @@ import {
   Input,
   Progress,
   Row,
+  Select,
   Space,
   Table,
   Tag,
@@ -13,7 +14,7 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { api } from "@/lib/api";
@@ -22,6 +23,11 @@ import type { Conference } from "@/types/conference";
 
 interface ItemResponse<T> {
   items: T[];
+}
+
+interface ReferenceDataResponse {
+  lifecycle_phases?: string[];
+  conference_statuses?: string[];
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -79,29 +85,60 @@ function locationLabel(record: Conference) {
 export default function Conferences() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const initialSearch = searchParams.get("search") ?? searchParams.get("q") ?? "";
-  const statusFilter = searchParams.get("status") ?? "";
-  const phaseFilter = searchParams.get("phase") ?? "";
+  const statusFilters = useMemo(() => {
+    const params = new URLSearchParams(searchParamsKey);
+    return params
+      .getAll("status")
+      .flatMap((value) => value.split(","))
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }, [searchParamsKey]);
+  const phaseFilters = useMemo(() => {
+    const params = new URLSearchParams(searchParamsKey);
+    return params
+      .getAll("phase")
+      .flatMap((value) => value.split(","))
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }, [searchParamsKey]);
   const [conferences, setConferences] = useState<Conference[]>([]);
+  const [lifecyclePhases, setLifecyclePhases] = useState<string[]>([]);
+  const [conferenceStatuses, setConferenceStatuses] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(initialSearch);
 
-  const fetchConferences = (query = search) => {
+  const fetchConferences = useCallback((query: string) => {
     setLoading(true);
     const params = new URLSearchParams();
     if (query.trim()) params.set("q", query.trim());
+    phaseFilters.forEach((phase) => params.append("phase", phase));
+    statusFilters.forEach((status) => params.append("status", status));
 
     api<ItemResponse<Conference>>(`/conferences${params.toString() ? `?${params.toString()}` : ""}`)
       .then((data) => setConferences(data.items ?? []))
       .catch((err) => message.error(err instanceof Error ? err.message : "Failed to load conferences"))
       .finally(() => setLoading(false));
-  };
+  }, [phaseFilters, statusFilters]);
 
   useEffect(() => {
-    const nextSearch = searchParams.get("search") ?? searchParams.get("q") ?? "";
+    api<ReferenceDataResponse>("/reference-data")
+      .then((data) => {
+        setLifecyclePhases(data.lifecycle_phases ?? []);
+        setConferenceStatuses(data.conference_statuses ?? []);
+      })
+      .catch((err) =>
+        message.warning(err instanceof Error ? err.message : "Lifecycle phases could not be loaded"),
+      );
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParamsKey);
+    const nextSearch = params.get("search") ?? params.get("q") ?? "";
     setSearch(nextSearch);
     fetchConferences(nextSearch);
-  }, [searchParams.toString()]);
+  }, [fetchConferences, searchParamsKey]);
 
   const handleSearch = () => {
     const next = search.trim();
@@ -118,13 +155,55 @@ export default function Conferences() {
     () =>
       conferences.filter(
         (conference) =>
-          (!statusFilter ||
-            textValue(conference.conference_status) === textValue(statusFilter)) &&
-          (!phaseFilter ||
-            textValue(conference.lifecycle_phase) === textValue(phaseFilter)),
+          (!statusFilters.length ||
+            statusFilters.some(
+              (status) => textValue(conference.conference_status) === textValue(status),
+            )) &&
+          (!phaseFilters.length ||
+            phaseFilters.some(
+              (phase) => textValue(conference.lifecycle_phase) === textValue(phase),
+            )),
       ),
-    [conferences, phaseFilter, statusFilter],
+    [conferences, phaseFilters, statusFilters],
   );
+
+  const phaseOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...lifecyclePhases,
+          ...phaseFilters,
+          ...conferences.map((conference) => conference.lifecycle_phase).filter(Boolean),
+        ]),
+      ).map((value) => ({ label: value, value })),
+    [conferences, lifecyclePhases, phaseFilters],
+  );
+
+  const updatePhaseFilters = (values: string[]) => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("phase");
+    values.forEach((value) => params.append("phase", value));
+    setSearchParams(params);
+  };
+
+  const statusOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...conferenceStatuses,
+          ...statusFilters,
+          ...conferences.map((conference) => conference.conference_status).filter(Boolean),
+        ]),
+      ).map((value) => ({ label: value, value })),
+    [conferenceStatuses, conferences, statusFilters],
+  );
+
+  const updateStatusFilters = (values: string[]) => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("status");
+    values.forEach((value) => params.append("status", value));
+    setSearchParams(params);
+  };
 
   const columns: ColumnsType<Conference> = useMemo(
     () => [
@@ -134,7 +213,7 @@ export default function Conferences() {
         width: "12.5%",
         sorter: (a, b) => textValue(a.acronym).localeCompare(textValue(b.acronym)),
         render: (value: string, record) => (
-          <Button type="link" className="table-link" onClick={() => navigate(`/conferences/${record.id}`)}>
+          <Button type="link" className="table-link" onClick={() => void navigate(`/conferences/${record.id}`)}>
             {value || record.canonical_name || "Conference"} {record.year}
           </Button>
         ),
@@ -241,7 +320,27 @@ export default function Conferences() {
               setSearchParams(params);
             }}
           />
-          <Button icon={<ReloadOutlined />} onClick={() => fetchConferences()}>
+          <Select
+            mode="multiple"
+            allowClear
+            maxTagCount="responsive"
+            placeholder="Filter lifecycle phases"
+            value={phaseFilters}
+            options={phaseOptions}
+            onChange={updatePhaseFilters}
+            style={{ minWidth: 280, maxWidth: 420 }}
+          />
+          <Select
+            mode="multiple"
+            allowClear
+            maxTagCount="responsive"
+            placeholder="Filter conference statuses"
+            value={statusFilters}
+            options={statusOptions}
+            onChange={updateStatusFilters}
+            style={{ minWidth: 250, maxWidth: 380 }}
+          />
+          <Button icon={<ReloadOutlined />} onClick={() => fetchConferences(search)}>
             Refresh
           </Button>
         </Space>
@@ -250,40 +349,42 @@ export default function Conferences() {
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <Card>
-            {(statusFilter || phaseFilter) && (
+            {(statusFilters.length > 0 || phaseFilters.length > 0) && (
               <div className="conference-filter-bar">
-                {statusFilter && (
+                {statusFilters.length > 0 && (
                   <>
-                    <Typography.Text type="secondary">Conference Status</Typography.Text>
-                    <Tag
-                      color={statusColor(statusFilter)}
-                      closable
-                      onClose={(event) => {
-                        event.preventDefault();
-                        const params = new URLSearchParams(searchParams);
-                        params.delete("status");
-                        setSearchParams(params);
-                      }}
-                    >
-                      {statusFilter}
-                    </Tag>
+                    <Typography.Text type="secondary">Conference Statuses</Typography.Text>
+                    {statusFilters.map((status) => (
+                      <Tag
+                        key={status}
+                        color={statusColor(status)}
+                        closable
+                        onClose={(event) => {
+                          event.preventDefault();
+                          updateStatusFilters(statusFilters.filter((value) => value !== status));
+                        }}
+                      >
+                        {status}
+                      </Tag>
+                    ))}
                   </>
                 )}
-                {phaseFilter && (
+                {phaseFilters.length > 0 && (
                   <>
-                    <Typography.Text type="secondary">Conference Lifecycle</Typography.Text>
-                    <Tag
-                      color="blue"
-                      closable
-                      onClose={(event) => {
-                        event.preventDefault();
-                        const params = new URLSearchParams(searchParams);
-                        params.delete("phase");
-                        setSearchParams(params);
-                      }}
-                    >
-                      {phaseFilter}
-                    </Tag>
+                    <Typography.Text type="secondary">Conference Lifecycles</Typography.Text>
+                    {phaseFilters.map((phase) => (
+                      <Tag
+                        key={phase}
+                        color="blue"
+                        closable
+                        onClose={(event) => {
+                          event.preventDefault();
+                          updatePhaseFilters(phaseFilters.filter((value) => value !== phase));
+                        }}
+                      >
+                        {phase}
+                      </Tag>
+                    ))}
                   </>
                 )}
               </div>
@@ -299,8 +400,8 @@ export default function Conferences() {
                 showSizeChanger: false,
                 showTotal: (total) => {
                   const filters = [
-                    statusFilter ? `status ${statusFilter}` : "",
-                    phaseFilter ? `lifecycle ${phaseFilter}` : "",
+                    statusFilters.length ? `statuses ${statusFilters.join(", ")}` : "",
+                    phaseFilters.length ? `lifecycles ${phaseFilters.join(", ")}` : "",
                   ].filter(Boolean);
                   return `${total} conference${total === 1 ? "" : "s"}${filters.length ? ` with ${filters.join(" and ")}` : ""}`;
                 },

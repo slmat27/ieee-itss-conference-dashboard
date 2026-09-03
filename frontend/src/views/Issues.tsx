@@ -80,6 +80,38 @@ const fallbackCategories = [
 ];
 const fallbackSeverities = ["Informational", "Low", "Medium", "High", "Critical"];
 
+function compareText(left?: string | null, right?: string | null) {
+  return String(left ?? "").localeCompare(String(right ?? ""), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function issueStatus(issue: Issue) {
+  return String(issue.issue_status ?? issue.status ?? "");
+}
+
+function statusRank(value?: string | null) {
+  const normalized = String(value ?? "").toLowerCase();
+  if (normalized === "open") return 0;
+  if (normalized.includes("progress")) return 1;
+  if (normalized === "resolved" || normalized === "closed") return 99;
+  return 2;
+}
+
+function severityRank(value?: string | null) {
+  const rank = fallbackSeverities.findIndex(
+    (severity) => severity.toLowerCase() === String(value ?? "").toLowerCase(),
+  );
+  return rank === -1 ? fallbackSeverities.length : rank;
+}
+
+function dateTimestamp(value?: string | null) {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
 function severityColor(value?: string) {
   switch (value?.toLowerCase()) {
     case "critical":
@@ -257,6 +289,8 @@ export default function Issues() {
       dataIndex: "title",
       key: "title",
       ellipsis: true,
+      sorter: (left, right) =>
+        compareText(left.title || left.issue_key, right.title || right.issue_key),
       render: (value: string, record) => (
         <Space direction="vertical" size={1}>
           <Typography.Text strong>{value || record.issue_key || "Issue"}</Typography.Text>
@@ -270,6 +304,11 @@ export default function Issues() {
       title: "Conference",
       key: "conference",
       width: 175,
+      sorter: (left, right) =>
+        compareText(
+          left.conference_name || left.conference_acronym,
+          right.conference_name || right.conference_acronym,
+        ),
       render: (_, record) => (
         <Button type="link" className="table-link" onClick={() => void navigate(`/conferences/${record.conference_id}`)}>
           {record.conference_name || record.conference_acronym || "-"}
@@ -281,6 +320,10 @@ export default function Issues() {
       dataIndex: "severity",
       key: "severity",
       width: 105,
+      sorter: (left, right) => {
+        const rankDifference = severityRank(left.severity) - severityRank(right.severity);
+        return rankDifference || compareText(left.severity, right.severity);
+      },
       render: (value: string) => <Tag color={severityColor(value)}>{value || "-"}</Tag>,
     },
     {
@@ -288,6 +331,13 @@ export default function Issues() {
       dataIndex: "issue_status",
       key: "issue_status",
       width: 110,
+      defaultSortOrder: "ascend",
+      sorter: (left, right) => {
+        const leftStatus = issueStatus(left);
+        const rightStatus = issueStatus(right);
+        const rankDifference = statusRank(leftStatus) - statusRank(rightStatus);
+        return rankDifference || compareText(leftStatus, rightStatus);
+      },
       render: (value: string) => {
         const normalized = String(value).toLowerCase();
         return (
@@ -312,6 +362,7 @@ export default function Issues() {
       key: "category",
       width: 125,
       responsive: ["lg"],
+      sorter: (left, right) => compareText(left.category, right.category),
       render: (value: string) => value || "-",
     },
     {
@@ -320,6 +371,7 @@ export default function Issues() {
       key: "source_type",
       width: 90,
       responsive: ["xl"],
+      sorter: (left, right) => compareText(left.source_type, right.source_type),
       render: (value: string) => <Tag color={value === "LLM" ? "purple" : "default"}>{value || "-"}</Tag>,
     },
     {
@@ -328,6 +380,7 @@ export default function Issues() {
       key: "date_detected",
       width: 105,
       responsive: ["xl"],
+      sorter: (left, right) => dateTimestamp(left.date_detected) - dateTimestamp(right.date_detected),
       render: (value: string) => (value ? new Date(value).toLocaleDateString() : "-"),
     },
     {

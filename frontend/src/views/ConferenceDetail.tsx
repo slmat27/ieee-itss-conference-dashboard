@@ -274,6 +274,12 @@ export default function ConferenceDetail() {
     conference.actual_attendees != null && conference.estimated_attendees
       ? ((conference.actual_attendees - conference.estimated_attendees) / conference.estimated_attendees) * 100
       : null;
+  const paperSubmissionDeviation =
+    conference.actual_paper_submissions != null && conference.estimated_paper_submissions
+      ? ((conference.actual_paper_submissions - conference.estimated_paper_submissions) /
+          conference.estimated_paper_submissions) *
+        100
+      : null;
 
   const openFactEditor = () => {
     const configuredSeries = conferenceSeries.find(
@@ -290,6 +296,8 @@ export default function ConferenceDetail() {
       website: conference.website ?? "",
       estimated_attendees: conference.estimated_attendees ?? undefined,
       actual_attendees: conference.actual_attendees ?? undefined,
+      estimated_paper_submissions: conference.estimated_paper_submissions ?? undefined,
+      actual_paper_submissions: conference.actual_paper_submissions ?? undefined,
       total_income_current: conference.total_income_current ?? undefined,
       total_expense_current: conference.total_expense_current ?? undefined,
       budgeted_income_total: conference.budgeted_income_total ?? undefined,
@@ -763,11 +771,23 @@ export default function ConferenceDetail() {
             </Card>
 
             <Card title="Attendees (Estimated / Actual)" className="detail-side-card">
-              <div className="attendee-value">
+              <div className="comparison-value">
                 {numberLabel(conference.estimated_attendees)} / {numberLabel(conference.actual_attendees)}
               </div>
               <Typography.Text type="secondary">
                 {attendeeDeviation == null ? "Deviation not available" : `Deviation ${attendeeDeviation.toFixed(1)}%`}
+              </Typography.Text>
+            </Card>
+
+            <Card title="Papers Submission (Estimated / Actual)" className="detail-side-card">
+              <div className="comparison-value">
+                {numberLabel(conference.estimated_paper_submissions)} /{" "}
+                {numberLabel(conference.actual_paper_submissions)}
+              </div>
+              <Typography.Text type="secondary">
+                {paperSubmissionDeviation == null
+                  ? "Deviation not available"
+                  : `Deviation ${paperSubmissionDeviation.toFixed(1)}%`}
               </Typography.Text>
             </Card>
 
@@ -894,6 +914,16 @@ export default function ConferenceDetail() {
             </Col>
             <Col xs={24} md={12}>
               <Form.Item name="actual_attendees" label="Actual Attendees">
+                <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="estimated_paper_submissions" label="Estimated Paper Submissions">
+                <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="actual_paper_submissions" label="Actual Paper Submissions">
                 <InputNumber min={0} style={{ width: "100%" }} />
               </Form.Item>
             </Col>

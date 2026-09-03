@@ -20,7 +20,7 @@ from typing import Any
 
 import pandas as pd
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, Response
 from openai import AzureOpenAI
@@ -310,6 +310,8 @@ class Conference(Base):
     website: Mapped[str | None] = mapped_column(String(400), nullable=True)
     estimated_attendees: Mapped[int | None] = mapped_column(Integer, nullable=True)
     actual_attendees: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_paper_submissions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_paper_submissions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_reviewed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     comments: Mapped[str | None] = mapped_column(Text, nullable=True)
     project_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -644,6 +646,8 @@ def ensure_database_schema(engine: Any) -> None:
         "source_details_json": "TEXT DEFAULT '{}'",
         "itss_loan_requested": "BOOLEAN DEFAULT 0",
         "itss_loan_amount": "FLOAT",
+        "estimated_paper_submissions": "INTEGER",
+        "actual_paper_submissions": "INTEGER",
     }
     with engine.begin() as connection:
         for name, ddl_type in additions.items():
@@ -1774,6 +1778,9 @@ class ConferenceIn(BaseModel):
     venue: str | None = None
     website: str | None = None
     estimated_attendees: int | None = None
+    actual_attendees: int | None = None
+    estimated_paper_submissions: int | None = Field(default=None, ge=0)
+    actual_paper_submissions: int | None = Field(default=None, ge=0)
     primary_contact: str | None = None
     primary_contact_email: EmailStr | None = None
 
@@ -1799,6 +1806,8 @@ class ConferenceUpdate(BaseModel):
     website: str | None = None
     estimated_attendees: int | None = None
     actual_attendees: int | None = None
+    estimated_paper_submissions: int | None = Field(default=None, ge=0)
+    actual_paper_submissions: int | None = Field(default=None, ge=0)
     application_status: str | None = None
     mou_status: str | None = None
     finance_status: str | None = None
@@ -1976,6 +1985,8 @@ def conference_payload(conference: Conference, session: Session | None = None) -
         "website": conference.website,
         "estimated_attendees": conference.estimated_attendees,
         "actual_attendees": conference.actual_attendees,
+        "estimated_paper_submissions": conference.estimated_paper_submissions,
+        "actual_paper_submissions": conference.actual_paper_submissions,
         "last_source_update": conference.last_source_update.isoformat() if conference.last_source_update else None,
         "last_reviewed_date": conference.last_reviewed_date.isoformat() if conference.last_reviewed_date else None,
         "comments": conference.comments,
@@ -2296,6 +2307,7 @@ def reference_data(session: Session = Depends(get_session)) -> dict[str, Any]:
         "conference_series": config["conference_series"],
         "sponsorship_types": config["sponsorship_types"],
         "lifecycle_phases": config["lifecycle_phases"],
+        "conference_statuses": DERIVED_CONFERENCE_STATUSES,
         "normalized_statuses": config["normalized_statuses"],
         "contact_roles": config["contact_roles"],
         "issue_categories": config["issue_categories"],
@@ -2310,6 +2322,8 @@ def list_conferences(
     q: str | None = None,
     year: int | None = None,
     series: str | None = None,
+    phase: list[str] = Query(default=[]),
+    status: list[str] = Query(default=[]),
     include_archived: bool = False,
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
@@ -2320,6 +2334,10 @@ def list_conferences(
         query = query.where(Conference.year == year)
     if series:
         query = query.where(Conference.conference_series == series)
+    if phase:
+        query = query.where(Conference.lifecycle_phase.in_(phase))
+    if status:
+        query = query.where(Conference.conference_status.in_(status))
     items = list(session.scalars(query.order_by(Conference.year.desc(), Conference.acronym.asc())))
     if q:
         needle = q.lower()
@@ -2382,6 +2400,9 @@ def create_conference(payload: ConferenceIn, session: Session = Depends(get_sess
         venue=payload.venue,
         website=payload.website,
         estimated_attendees=payload.estimated_attendees,
+        actual_attendees=payload.actual_attendees,
+        estimated_paper_submissions=payload.estimated_paper_submissions,
+        actual_paper_submissions=payload.actual_paper_submissions,
     )
     session.add(conference)
     session.flush()
@@ -2878,6 +2899,8 @@ def generate_issues_for_conference(
                     "xplore_posting_date",
                     "estimated_attendees",
                     "actual_attendees",
+                    "estimated_paper_submissions",
+                    "actual_paper_submissions",
                     "comments",
                 )
             },
@@ -3774,6 +3797,8 @@ CONFERENCE_COLUMNS = [
     "country",
     "estimated_attendees",
     "actual_attendees",
+    "estimated_paper_submissions",
+    "actual_paper_submissions",
     "website",
     "application_status",
     "mou_status",
@@ -3974,6 +3999,8 @@ IMPORT_FIELD_MAP = {
     "website": "website",
     "estimated_attendees": "estimated_attendees",
     "actual_attendees": "actual_attendees",
+    "estimated_paper_submissions": "estimated_paper_submissions",
+    "actual_paper_submissions": "actual_paper_submissions",
     "project_code": "project_code",
     "application_status": "application_status",
     "application_submitted_date": "application_submitted_date",
@@ -4009,7 +4036,12 @@ DATE_IMPORT_FIELDS = {
     "proceedings_submitted_date",
     "xplore_posting_date",
 }
-INTEGER_IMPORT_FIELDS = {"estimated_attendees", "actual_attendees"}
+INTEGER_IMPORT_FIELDS = {
+    "estimated_attendees",
+    "actual_attendees",
+    "estimated_paper_submissions",
+    "actual_paper_submissions",
+}
 MONEY_IMPORT_FIELDS = {
     "total_income_current",
     "total_expense_current",

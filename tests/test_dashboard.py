@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, inspect
 
 from app import dashboard
 from app.main import create_app
@@ -41,6 +42,17 @@ def test_first_run_creates_database_and_reference_data(tmp_path: Path, monkeypat
         assert "TCS" in [item["code"] for item in data["conference_series"]]
         assert "Financially Co-Sponsored" in data["sponsorship_types"]
         assert (tmp_path / "data" / "itss_dashboard.db").exists()
+
+
+def test_existing_database_schema_adds_paper_submission_columns() -> None:
+    engine = create_engine("sqlite://", future=True)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE conferences (id VARCHAR PRIMARY KEY)")
+
+    dashboard.ensure_database_schema(engine)
+
+    columns = {column["name"] for column in inspect(engine).get_columns("conferences")}
+    assert {"estimated_paper_submissions", "actual_paper_submissions"}.issubset(columns)
 
 
 def test_technically_cosponsored_conferences_use_tcs_without_finance_weight(tmp_path: Path, monkeypatch) -> None:
@@ -165,6 +177,8 @@ def test_conference_can_be_created_and_scored(tmp_path: Path, monkeypatch) -> No
                 "lifecycle_phase": "Expression of Interest",
                 "city": "Berlin",
                 "country": "Germany",
+                "estimated_paper_submissions": 500,
+                "actual_paper_submissions": 540,
                 "primary_contact": "Conference Chair",
                 "primary_contact_email": "chair@example.org",
             },
@@ -172,6 +186,8 @@ def test_conference_can_be_created_and_scored(tmp_path: Path, monkeypatch) -> No
         assert response.status_code == 201
         created = response.json()
         assert created["canonical_name"] == "ITSC 2028"
+        assert created["estimated_paper_submissions"] == 500
+        assert created["actual_paper_submissions"] == 540
         assert created["data_completeness"] > 0
         assert created["status_band"] in {"Provisional", "Critical", "At Risk", "Attention Needed", "On Track"}
 
@@ -187,6 +203,51 @@ def test_conference_can_be_created_and_scored(tmp_path: Path, monkeypatch) -> No
             },
         )
         assert duplicate.status_code == 409
+
+
+def test_conferences_can_be_filtered_by_multiple_lifecycle_phases(tmp_path: Path, monkeypatch) -> None:
+    with _client(tmp_path, monkeypatch) as client:
+        conference_ids: dict[str, str] = {}
+        for index, acronym in enumerate(("PHASEA", "PHASEB", "PHASEC"), start=1):
+            response = client.post(
+                "/api/conferences",
+                json={
+                    "conference_number": f"9930{index}",
+                    "acronym": acronym,
+                    "year": 2032,
+                    "official_title": f"{acronym} Conference",
+                    "conference_series": "Custom Conference Series",
+                    "sponsorship_type": "Financially Sponsored",
+                    "lifecycle_phase": "Expression of Interest",
+                },
+            )
+            assert response.status_code == 201
+            conference_ids[acronym] = response.json()["id"]
+
+        assert dashboard._state is not None
+        with dashboard._state.session_factory() as session:
+            phase_a = session.get(dashboard.Conference, conference_ids["PHASEA"])
+            phase_b = session.get(dashboard.Conference, conference_ids["PHASEB"])
+            phase_c = session.get(dashboard.Conference, conference_ids["PHASEC"])
+            phase_a.lifecycle_phase = "Conference Delivery"
+            phase_a.conference_status = "On Track"
+            phase_b.lifecycle_phase = "Proceedings Processing"
+            phase_b.conference_status = "Attention Needed"
+            phase_c.lifecycle_phase = "Detailed Planning"
+            phase_c.conference_status = "Critical"
+            session.commit()
+
+        response = client.get(
+            "/api/conferences",
+            params=[
+                ("phase", "Conference Delivery"),
+                ("phase", "Proceedings Processing"),
+                ("status", "On Track"),
+                ("status", "Attention Needed"),
+            ],
+        )
+        assert response.status_code == 200
+        assert {item["acronym"] for item in response.json()["items"]} == {"PHASEA", "PHASEB"}
 
 
 def test_ai_issue_generation_reviews_watchlist_and_skips_duplicates(tmp_path: Path, monkeypatch) -> None:
@@ -390,6 +451,12 @@ def test_import_templates_and_preview(tmp_path: Path, monkeypatch) -> None:
         template = client.get("/api/imports/template.csv")
         assert template.status_code == 200
         assert "conference_number,acronym,year" in template.text
+        assert "estimated_paper_submissions,actual_paper_submissions" in template.text
+
+        xlsx_template = client.get("/api/imports/template.xlsx")
+        template_workbook = pd.ExcelFile(io.BytesIO(xlsx_template.content))
+        template_columns = set(pd.read_excel(template_workbook, sheet_name="Conferences").columns)
+        assert {"estimated_paper_submissions", "actual_paper_submissions"}.issubset(template_columns)
 
         csv_text = (
             "conference_number,acronym,year,official_title,conference_series,"
@@ -426,6 +493,70 @@ def test_import_templates_and_preview(tmp_path: Path, monkeypatch) -> None:
         )
         assert xlsx_response.status_code == 200
         assert xlsx_response.json()["summary"]["new"] == 1
+
+
+def test_paper_submission_facts_update_import_and_export(tmp_path: Path, monkeypatch) -> None:
+    with _client(tmp_path, monkeypatch) as client:
+        created = client.post(
+            "/api/conferences",
+            json={
+                "conference_number": "12347",
+                "acronym": "PAPER",
+                "year": 2031,
+                "official_title": "IEEE Paper Submission Test",
+                "conference_series": "Custom Conference Series",
+                "sponsorship_type": "Financially Sponsored",
+                "lifecycle_phase": "Expression of Interest",
+                "estimated_paper_submissions": 300,
+                "actual_paper_submissions": 325,
+            },
+        )
+        assert created.status_code == 201
+        conference_id = created.json()["id"]
+
+        updated = client.patch(
+            f"/api/conferences/{conference_id}",
+            json={"estimated_paper_submissions": 350, "actual_paper_submissions": 375},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["estimated_paper_submissions"] == 350
+        assert updated.json()["actual_paper_submissions"] == 375
+
+        csv_text = (
+            "conference_number,acronym,year,official_title,conference_series,sponsorship_type,lifecycle_phase,"
+            "estimated_paper_submissions,actual_paper_submissions\n"
+            "12347,PAPER,2031,IEEE Paper Submission Test,Custom Conference Series,Financially Sponsored,"
+            "Expression of Interest,400,420\n"
+        )
+        preview_response = client.post(
+            "/api/imports/validate",
+            files={"file": ("paper-submissions.csv", csv_text.encode("utf-8"), "text/csv")},
+        )
+        assert preview_response.status_code == 200
+        assert {change["field"] for change in preview_response.json()["rows"][0]["changes"]} >= {
+            "estimated_paper_submissions",
+            "actual_paper_submissions",
+        }
+
+        apply_response = client.post(
+            "/api/imports/apply",
+            data={
+                "selected_changes_json": json.dumps(
+                    {"2": ["estimated_paper_submissions", "actual_paper_submissions"]}
+                )
+            },
+            files={"file": ("paper-submissions.csv", csv_text.encode("utf-8"), "text/csv")},
+        )
+        assert apply_response.status_code == 200
+        imported = client.get(f"/api/conferences/{conference_id}").json()
+        assert imported["estimated_paper_submissions"] == 400
+        assert imported["actual_paper_submissions"] == 420
+
+        exported = client.get("/api/exports/portfolio.xlsx")
+        export_frame = pd.read_excel(io.BytesIO(exported.content), sheet_name="Conferences")
+        exported_row = export_frame.loc[export_frame["conference_number"] == 12347].iloc[0]
+        assert exported_row["estimated_paper_submissions"] == 400
+        assert exported_row["actual_paper_submissions"] == 420
 
 
 def test_import_applies_selected_valid_fields_when_other_fields_have_errors(tmp_path: Path, monkeypatch) -> None:

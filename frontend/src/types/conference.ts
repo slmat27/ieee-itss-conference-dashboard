@@ -96,6 +96,8 @@ export interface Conference {
   website?: string | null;
   estimated_attendees?: number | null;
   actual_attendees?: number | null;
+  estimated_paper_submissions?: number | null;
+  actual_paper_submissions?: number | null;
   last_source_update?: string | null;
   last_reviewed_date?: string | null;
   comments?: string | null;
