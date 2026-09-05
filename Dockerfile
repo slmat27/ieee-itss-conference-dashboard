@@ -1,5 +1,5 @@
-ARG NPM_REGISTRY_URL=https://artifactory.iav.com/artifactory/api/npm/npm-registry-org
-ARG PYPI_INDEX_URL=https://artifactory.iav.com/artifactory/api/pypi/pypi-remote/simple
+ARG NPM_REGISTRY_URL=https://registry.npmjs.org/
+ARG PYPI_INDEX_URL=https://pypi.org/simple
 ARG UV_VERSION=0.11.7
 
 FROM node:24-slim AS frontend-builder
@@ -15,14 +15,13 @@ RUN npm ci --cache .npm-cache
 COPY frontend/ ./
 RUN npm run build
 
-FROM python:3.14-slim AS python-deps
+FROM python:3.12-slim AS python-deps
 
 ARG PYPI_INDEX_URL
 ARG UV_VERSION
 
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_INDEX_URL=${PYPI_INDEX_URL} \
-    PIP_TRUSTED_HOST=artifactory.iav.com \
     UV_DEFAULT_INDEX=${PYPI_INDEX_URL} \
     UV_PROJECT_ENVIRONMENT=/app/.venv \
     UV_LINK_MODE=copy
@@ -34,7 +33,7 @@ RUN python -m pip install --no-cache-dir "uv==${UV_VERSION}"
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-FROM python:3.14-slim
+FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

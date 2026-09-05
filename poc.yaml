@@ -30,17 +30,17 @@ outputs:
     description: RAG answers, issue recommendations, and editable email drafts.
 validation:
   testCommand:
-    - D:/GitLab/agentic_webapp_ieee/creator-agent/workspace/validation-venv/Scripts/python.exe
-    - -m
+    - uv
+    - run
     - pytest
     - tests
     - -p
     - no:cacheprovider
     - --basetemp
-    - ../../pytest-temp
+    - .test-tmp-pytest
   smokeCommand:
-    - D:/GitLab/agentic_webapp_ieee/creator-agent/workspace/validation-venv/Scripts/python.exe
-    - -m
+    - uv
+    - run
     - pytest
     - tests/test_dashboard.py
     - -p
@@ -48,7 +48,7 @@ validation:
     - -k
     - test_conference_can_be_created_and_scored
     - --basetemp
-    - ../../pytest-temp
+    - .test-tmp-smoke
 llm:
   required: false
   defaultModel: default-reasoning

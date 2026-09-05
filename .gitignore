@@ -6,12 +6,15 @@ storage/
 frontend/dist/
 frontend/node_modules/
 frontend/src/**/_backups/
+frontend/*.tsbuildinfo
 webapp-backup/
 recovery/
 recovered_App.tsx
 restored_App.tsx
 .writesrc.py
 .uv-cache/
+.npm-cache/
+.test-tmp*/
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/

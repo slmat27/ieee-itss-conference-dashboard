@@ -1,5 +1,7 @@
 $ErrorActionPreference = "Stop"
 
+Set-Location $PSScriptRoot
+
 function Import-DotEnv {
   param([string]$Path)
   if (-not (Test-Path $Path)) { return }
@@ -11,20 +13,30 @@ function Import-DotEnv {
   }
 }
 
-Import-DotEnv (Join-Path (Get-Location) ".env")
+Import-DotEnv (Join-Path $PSScriptRoot ".env")
 
 $port = if ($env:FRONTEND_PORT) { $env:FRONTEND_PORT } else { "5191" }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-  throw "npm is required for the full React/Vite frontend. Install Node.js, then run setup.ps1."
+  throw "npm is required for the React/Vite frontend. Install Node.js, then run setup.ps1."
 }
 
+$env:NPM_CONFIG_CACHE = Join-Path $PSScriptRoot ".npm-cache"
 if (-not (Test-Path "frontend\node_modules")) {
-  Write-Host "Installing frontend dependencies from internal Artifactory registry..."
+  Write-Host "Installing frontend dependencies from the configured npm registry..."
   Push-Location frontend
-  npm install --registry=https://artifactory.iav.com/artifactory/api/npm/npm --cache D:\GitLab\agentic_webapp_ieee\creator-agent\workspace\npm-cache-local
-  Pop-Location
+  try {
+    npm ci
+    if ($LASTEXITCODE -ne 0) { throw "npm ci failed." }
+  }
+  finally {
+    Pop-Location
+  }
 }
 
 Push-Location frontend
-npm run dev -- --host 127.0.0.1 --port $port
-Pop-Location
+try {
+  npm run dev -- --host 127.0.0.1 --port $port
+}
+finally {
+  Pop-Location
+}

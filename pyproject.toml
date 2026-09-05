@@ -29,11 +29,6 @@ dev = [
     "ruff",
 ]
 
-[[tool.uv.index]]
-name = "iav-artifactory"
-url = "https://artifactory.iav.com/artifactory/api/pypi/pypi-remote/simple"
-default = true
-
 [tool.uv.build-backend]
 module-name = "app"
 module-root = "."
