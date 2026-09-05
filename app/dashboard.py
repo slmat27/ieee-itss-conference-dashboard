@@ -11,11 +11,12 @@ import subprocess
 import uuid
 import ast
 import math
+from collections.abc import Iterator
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias, TypedDict
 
 import pandas as pd
 import httpx
@@ -58,6 +59,44 @@ IEEE_AMBER = "#FFB81C"
 IEEE_ORANGE = "#E87722"
 IEEE_RED = "#BA0C2F"
 IEEE_GRAY = "#5B6770"
+
+
+class ConferenceSeriesConfig(TypedDict):
+    code: str
+    name: str
+    flagship: bool
+
+
+class ReferenceConfigDefaults(TypedDict):
+    committee_members: list[str]
+    conference_series: list[ConferenceSeriesConfig]
+    lifecycle_phases: list[str]
+    conference_statuses: list[str]
+    normalized_statuses: list[str]
+    sponsorship_types: list[str]
+    contact_roles: list[str]
+    issue_categories: list[str]
+    issue_severities: list[str]
+    review_assessments: list[str]
+
+
+class MilestoneDateOffset(TypedDict, total=False):
+    anchor: str
+    months: int
+    days: int
+    warning_days: int
+
+
+class ScoreSettingsDefaults(TypedDict):
+    dimension_weights: dict[str, float]
+    milestone_status_scores: dict[str, float]
+    issue_severity_penalties: dict[str, float]
+    issue_assessment_factors: dict[str, float]
+    issue_penalty_cap: float
+    lateness_step_days: float
+    lateness_cap_factor: float
+    score_formula: str
+
 
 LIFECYCLE_PHASES = [
     "Unknown",
@@ -159,7 +198,7 @@ SCORE_WEIGHTS = {
     "Registration and Event Readiness": 10.0,
     "Post-Conference Publication and Closure": 10.0,
 }
-REFERENCE_CONFIG_DEFAULTS = {
+REFERENCE_CONFIG_DEFAULTS: ReferenceConfigDefaults = {
     "committee_members": ["Ahmed Hussein", "Daniel Medina"],
     "conference_series": [{"code": code, "name": name, "flagship": flagship} for code, name, flagship in CONFERENCE_SERIES],
     "lifecycle_phases": LIFECYCLE_PHASES,
@@ -198,7 +237,7 @@ MILESTONE_SEEDS = [
 
 # Milestone date offsets as months and days relative to conference start date.
 # Positive = after start date, negative = before start date.
-MILESTONE_DATE_DEFAULTS = {
+MILESTONE_DATE_DEFAULTS: dict[str, MilestoneDateOffset] = {
     # IEEE/ITSS conference lifecycle: application and MOU ~18-24 months before
     "APPLICATION": {"anchor": "start", "months": -24, "days": 0},
     "MOU": {"anchor": "start", "months": -18, "days": 0},
@@ -233,7 +272,7 @@ DEFAULT_MILESTONE_STATUS_SCORES = {
     "blocked": 0.0,
 }
 
-DEFAULT_SCORE_SETTINGS = {
+DEFAULT_SCORE_SETTINGS: ScoreSettingsDefaults = {
     "dimension_weights": SCORE_WEIGHTS,
     "milestone_status_scores": DEFAULT_MILESTONE_STATUS_SCORES,
     "issue_severity_penalties": {"Critical": 12.0, "High": 6.0, "Medium": 3.0, "Low": 1.0, "Informational": 0.0},
@@ -628,6 +667,13 @@ class DashboardSettings(Base):
     value_json: Mapped[str] = mapped_column(PORTABLE_TEXT)
 
 
+def require_dashboard_setting(session: Session, key: str) -> DashboardSettings:
+    setting = session.get(DashboardSettings, key)
+    if setting is None:
+        raise RuntimeError(f"Required dashboard setting is missing: {key}")
+    return setting
+
+
 @dataclass(frozen=True)
 class DashboardState:
     engine: Engine
@@ -679,7 +725,7 @@ def get_state() -> DashboardState:
     return _state or init_dashboard()
 
 
-def get_session() -> Session:
+def get_session() -> Iterator[Session]:
     state = get_state()
     with state.session_factory() as session:
         yield session
@@ -714,6 +760,15 @@ def parse_date(value: Any) -> date | None:
     if isinstance(value, date):
         return value
     return date.fromisoformat(str(value)[:10])
+
+
+def coerce_int(value: Any, *, default: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def sanitize_reference_config(raw: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -771,12 +826,18 @@ def sanitize_committee_members(values: Any) -> list[str]:
     return items if items else ["Ahmed Hussein", "Daniel Medina"]
 
 
-def sanitize_conference_series(values: Any) -> list[dict[str, Any]]:
+def sanitize_conference_series(values: Any) -> list[ConferenceSeriesConfig]:
     if not isinstance(values, list):
         values = REFERENCE_CONFIG_DEFAULTS["conference_series"]
-    defaults_by_name = {name.upper(): {"code": code, "name": name, "flagship": flagship} for code, name, flagship in CONFERENCE_SERIES}
-    defaults_by_code = {str(code).upper(): {"code": code, "name": name, "flagship": flagship} for code, name, flagship in CONFERENCE_SERIES}
-    items: list[dict[str, Any]] = []
+    defaults_by_name: dict[str, ConferenceSeriesConfig] = {
+        name.upper(): {"code": code, "name": name, "flagship": flagship}
+        for code, name, flagship in CONFERENCE_SERIES
+    }
+    defaults_by_code: dict[str, ConferenceSeriesConfig] = {
+        str(code).upper(): {"code": code, "name": name, "flagship": flagship}
+        for code, name, flagship in CONFERENCE_SERIES
+    }
+    items: list[ConferenceSeriesConfig] = []
     seen: set[str] = set()
     for value in values:
         structured_value = isinstance(value, dict)
@@ -1146,28 +1207,36 @@ def merged_role_permissions(raw: dict[str, Any] | None) -> dict[str, dict[str, b
     return clean
 
 
-def milestone_date_offsets(session: Session | None = None) -> dict[str, dict[str, Any]]:
+def milestone_date_offsets(session: Session | None = None) -> dict[str, MilestoneDateOffset]:
     """Get persisted milestone date offsets, falling back to MILESTONE_DATE_DEFAULTS."""
-    def normalize_offsets(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        merged = json.loads(json.dumps(MILESTONE_DATE_DEFAULTS))
+    def normalize_offsets(raw: dict[str, Any]) -> dict[str, MilestoneDateOffset]:
+        merged: dict[str, MilestoneDateOffset] = {
+            code: offset.copy() for code, offset in MILESTONE_DATE_DEFAULTS.items()
+        }
         for code, offset in raw.items():
             if not isinstance(offset, dict):
                 continue
-            current = dict(merged.get(str(code).upper(), {"anchor": "start", "months": 0, "days": 0}))
+            current = merged.get(
+                str(code).upper(),
+                {"anchor": "start", "months": 0, "days": 0},
+            ).copy()
             anchor = str(offset.get("anchor", current.get("anchor", "start"))).lower()
             current["anchor"] = anchor if anchor in {"start", "end"} else "start"
-            try:
-                current["months"] = int(offset.get("months", current.get("months", 0)))
-            except (TypeError, ValueError):
-                current["months"] = int(current.get("months", 0))
-            try:
-                current["days"] = int(offset.get("days", current.get("days", 0)))
-            except (TypeError, ValueError):
-                current["days"] = int(current.get("days", 0))
-            try:
-                current["warning_days"] = max(0, int(offset.get("warning_days", current.get("warning_days", 0))))
-            except (TypeError, ValueError):
-                current["warning_days"] = max(0, int(current.get("warning_days", 0)))
+            current["months"] = coerce_int(
+                offset.get("months"),
+                default=coerce_int(current.get("months")),
+            )
+            current["days"] = coerce_int(
+                offset.get("days"),
+                default=coerce_int(current.get("days")),
+            )
+            current["warning_days"] = max(
+                0,
+                coerce_int(
+                    offset.get("warning_days"),
+                    default=coerce_int(current.get("warning_days")),
+                ),
+            )
             merged[str(code).upper()] = current
         return merged
 
@@ -1184,7 +1253,7 @@ def milestone_date_offsets(session: Session | None = None) -> dict[str, dict[str
     return normalize_offsets(MILESTONE_DATE_DEFAULTS)
 
 
-def milestone_due_date(code: str, start_date: date | None, end_date: date | None, *, offsets: dict[str, dict[str, Any]] | None = None) -> date | None:
+def milestone_due_date(code: str, start_date: date | None, end_date: date | None, *, offsets: dict[str, MilestoneDateOffset] | None = None) -> date | None:
     """Calculate milestone due date from conference start/end date using months/days offset."""
     lookup = offsets if offsets is not None else MILESTONE_DATE_DEFAULTS
     offset = lookup.get(code)
@@ -1196,13 +1265,16 @@ def milestone_due_date(code: str, start_date: date | None, end_date: date | None
         anchor_date = start_date or end_date
     if anchor_date is None:
         return None
-    total_days = offset["months"] * 30 + offset["days"]
+    total_days = (
+        coerce_int(offset.get("months")) * 30
+        + coerce_int(offset.get("days"))
+    )
     from datetime import timedelta
     result = anchor_date + timedelta(days=total_days)
     return result
 
 
-def milestone_due_from_start(code: str, start_date: date | None, *, offsets: dict[str, dict[str, int]] | None = None) -> date | None:
+def milestone_due_from_start(code: str, start_date: date | None, *, offsets: dict[str, MilestoneDateOffset] | None = None) -> date | None:
     return milestone_due_date(code, start_date, None, offsets=offsets)
 
 
@@ -3288,16 +3360,18 @@ def document_vectors(document_id: str, session: Session = Depends(get_session)) 
     if not doc:
         raise HTTPException(404, "Unknown document.")
     rows = document_vector_rows(document_id)
-    preview = [
-        {
-            "index": row.get("index"),
-            "text": str(row.get("text", ""))[:900],
-            "character_count": len(str(row.get("text", ""))),
-            "has_embedding": isinstance(row.get("embedding"), list),
-            "dimension": len(row.get("embedding")) if isinstance(row.get("embedding"), list) else 0,
-        }
-        for row in rows[:20]
-    ]
+    preview: list[dict[str, Any]] = []
+    for row in rows[:20]:
+        embedding = row.get("embedding")
+        preview.append(
+            {
+                "index": row.get("index"),
+                "text": str(row.get("text", ""))[:900],
+                "character_count": len(str(row.get("text", ""))),
+                "has_embedding": isinstance(embedding, list),
+                "dimension": len(embedding) if isinstance(embedding, list) else 0,
+            }
+        )
     return {"document": document_payload(doc), "vector": vector_summary(document_id), "chunks": preview}
 
 
@@ -3472,9 +3546,14 @@ def delete_email_draft(draft_id: str, session: Session = Depends(get_session)) -
 
 @router.get("/api/settings")
 def settings(session: Session = Depends(get_session)) -> dict[str, Any]:
-    score_weights = json.loads(session.get(DashboardSettings, "score_weights").value_json)
+    score_weights_setting = require_dashboard_setting(session, "score_weights")
+    score_weights = json.loads(score_weights_setting.value_json)
     scoring = score_settings(session)
-    portfolio_start_year = int(json.loads(session.get(DashboardSettings, "portfolio_start_year").value_json))
+    portfolio_start_year_setting = require_dashboard_setting(
+        session,
+        "portfolio_start_year",
+    )
+    portfolio_start_year = int(json.loads(portfolio_start_year_setting.value_json))
     feature_setting = session.get(DashboardSettings, "feature_flags")
     feature_flags = {**default_feature_flags(), **(json.loads(feature_setting.value_json) if feature_setting else {})}
     role_setting = session.get(DashboardSettings, "role_permissions")
@@ -3507,25 +3586,28 @@ def settings(session: Session = Depends(get_session)) -> dict[str, Any]:
 @router.patch("/api/settings")
 def update_settings(payload: SettingsUpdate, session: Session = Depends(get_session)) -> dict[str, Any]:
     if payload.portfolio_start_year is not None:
-        setting = session.get(DashboardSettings, "portfolio_start_year")
-        setting.value_json = json.dumps(payload.portfolio_start_year)
+        portfolio_setting = require_dashboard_setting(
+            session,
+            "portfolio_start_year",
+        )
+        portfolio_setting.value_json = json.dumps(payload.portfolio_start_year)
     if payload.kpi_from_year is not None or payload.kpi_to_year is not None:
         current_from, current_to = kpi_year_range(session)
         kpi_from_year = payload.kpi_from_year if payload.kpi_from_year is not None else current_from
         kpi_to_year = payload.kpi_to_year if payload.kpi_to_year is not None else current_to
         if kpi_from_year > kpi_to_year:
             raise HTTPException(422, "KPI From year must be earlier than or equal to the To year.")
-        setting = session.get(DashboardSettings, "kpi_year_range")
+        kpi_setting = session.get(DashboardSettings, "kpi_year_range")
         value_json = json.dumps({"from": kpi_from_year, "to": kpi_to_year})
-        if setting:
-            setting.value_json = value_json
+        if kpi_setting:
+            kpi_setting.value_json = value_json
         else:
             session.add(DashboardSettings(key="kpi_year_range", value_json=value_json))
     if payload.score_weights is not None:
-        setting = session.get(DashboardSettings, "score_weights")
-        setting.value_json = json.dumps(payload.score_weights)
+        weights_setting = require_dashboard_setting(session, "score_weights")
+        weights_setting.value_json = json.dumps(payload.score_weights)
     if payload.score_settings is not None:
-        setting = session.get(DashboardSettings, "score_settings")
+        scoring_setting = session.get(DashboardSettings, "score_settings")
         formula = payload.score_settings.get("score_formula") if isinstance(payload.score_settings, dict) else None
         if formula is not None:
             try:
@@ -3533,8 +3615,8 @@ def update_settings(payload: SettingsUpdate, session: Session = Depends(get_sess
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
         merged = merged_score_settings(payload.score_settings)
-        if setting:
-            setting.value_json = json.dumps(merged)
+        if scoring_setting:
+            scoring_setting.value_json = json.dumps(merged)
         else:
             session.add(DashboardSettings(key="score_settings", value_json=json.dumps(merged)))
         for conference in session.scalars(select(Conference)):
@@ -3547,24 +3629,24 @@ def update_settings(payload: SettingsUpdate, session: Session = Depends(get_sess
             else:
                 session.add(StatusMapping(source_value=source, normalized_value=normalized))
     if payload.feature_flags is not None:
-        setting = session.get(DashboardSettings, "feature_flags")
+        feature_setting = session.get(DashboardSettings, "feature_flags")
         merged = {**default_feature_flags(), **payload.feature_flags}
-        if setting:
-            setting.value_json = json.dumps(merged)
+        if feature_setting:
+            feature_setting.value_json = json.dumps(merged)
         else:
             session.add(DashboardSettings(key="feature_flags", value_json=json.dumps(merged)))
     if payload.role_permissions is not None:
-        setting = session.get(DashboardSettings, "role_permissions")
+        role_setting = session.get(DashboardSettings, "role_permissions")
         merged_roles = merged_role_permissions(payload.role_permissions)
-        if setting:
-            setting.value_json = json.dumps(merged_roles)
+        if role_setting:
+            role_setting.value_json = json.dumps(merged_roles)
         else:
             session.add(DashboardSettings(key="role_permissions", value_json=json.dumps(merged_roles)))
     if payload.assistant_system_prompt is not None:
         prompt = " ".join(payload.assistant_system_prompt.split())
-        setting = session.get(DashboardSettings, "assistant_system_prompt")
-        if setting:
-            setting.value_json = json.dumps(prompt)
+        prompt_setting = session.get(DashboardSettings, "assistant_system_prompt")
+        if prompt_setting:
+            prompt_setting.value_json = json.dumps(prompt)
         else:
             session.add(DashboardSettings(key="assistant_system_prompt", value_json=json.dumps(prompt)))
     session.commit()
@@ -3730,12 +3812,12 @@ class MilestoneDatesPayload(BaseModel):
 @router.post("/api/settings/recalculate-milestone-dates")
 def recalculate_all_milestone_dates(payload: MilestoneDatesPayload | None = None, session: Session = Depends(get_session)) -> dict[str, Any]:
     if payload and payload.milestone_date_defaults:
-        clean: dict[str, dict[str, Any]] = {}
+        clean: dict[str, MilestoneDateOffset] = {}
         for code, offset in payload.milestone_date_defaults.items():
             anchor = str(offset.get("anchor", "start")).lower()
-            months = int(offset.get("months", 0))
-            days = int(offset.get("days", 0))
-            warning_days = max(0, int(offset.get("warning_days", 0)))
+            months = coerce_int(offset.get("months"))
+            days = coerce_int(offset.get("days"))
+            warning_days = max(0, coerce_int(offset.get("warning_days")))
             clean[code.upper()] = {
                 "anchor": anchor if anchor in {"start", "end"} else "start",
                 "months": months,
@@ -3843,7 +3925,7 @@ def build_import_preview(filename: str, data: bytes, session: Session) -> dict[s
         m_acronym = str(mrow.get("acronym") or "").strip().upper()
         m_year_raw = mrow.get("year")
         try:
-            m_year = int(m_year_raw)
+            m_year = parse_import_integer(m_year_raw)
         except (TypeError, ValueError):
             m_year = 0
         m_conference_number = clean_cell(mrow.get("conference_number"))
@@ -3873,12 +3955,7 @@ def build_import_preview(filename: str, data: bytes, session: Session) -> dict[s
                 if mfield not in mrow:
                     continue
                 raw_val = mrow[mfield]
-                if mfield == "status":
-                    new_val = normalize_status(raw_val, session) if raw_val else None
-                elif mfield == "due_date":
-                    new_val = parse_date(raw_val) if raw_val else None
-                else:
-                    new_val = clean_cell(raw_val)
+                new_val = milestone_import_value(mfield, raw_val, session)
                 if new_val is _SKIP_IMPORT_VALUE:
                     continue
                 old_val = getattr(m_milestone, mfield, None)
@@ -3901,7 +3978,7 @@ def build_import_preview(filename: str, data: bytes, session: Session) -> dict[s
         acronym = str(row.get("acronym") or "").strip()
         year_raw = row.get("year")
         try:
-            year = int(year_raw)
+            year = parse_import_integer(year_raw)
         except (TypeError, ValueError):
             year = 0
             errors.append("year must be a number")
@@ -3965,7 +4042,7 @@ def read_import_rows(filename: str, data: bytes) -> list[dict[str, Any]]:
     missing = [column for column in ["acronym", "year", "official_title"] if column not in frame.columns]
     if missing:
         raise HTTPException(400, "Missing required columns: " + ", ".join(missing))
-    return frame.fillna("").to_dict(orient="records")
+    return dataframe_records(frame)
 
 
 def read_import_milestone_rows(filename: str, data: bytes) -> list[dict[str, Any]]:
@@ -3985,7 +4062,7 @@ def read_import_milestone_rows(filename: str, data: bytes) -> list[dict[str, Any
     missing = [c for c in ["acronym", "year", "milestone_code"] if c not in frame.columns]
     if missing:
         return []
-    return frame.fillna("").to_dict(orient="records")
+    return dataframe_records(frame)
 
 
 IMPORT_FIELD_MAP = {
@@ -4061,7 +4138,41 @@ MONEY_IMPORT_FIELDS = {
 }
 BOOLEAN_IMPORT_FIELDS = {"itss_loan_requested"}
 MILESTONE_FIELDS = {"status", "due_date", "comments"}
-_SKIP_IMPORT_VALUE = object()
+ImportFieldValue: TypeAlias = str | int | float | bool | date | None
+MilestoneImportValue: TypeAlias = str | date | None
+
+
+class _SkipImportValue:
+    pass
+
+
+_SKIP_IMPORT_VALUE = _SkipImportValue()
+
+
+def dataframe_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    records = frame.fillna("").to_dict(orient="records")
+    return [
+        {str(column): value for column, value in record.items()}
+        for record in records
+    ]
+
+
+def parse_import_integer(value: Any) -> int:
+    if value is None:
+        raise TypeError("integer value is missing")
+    return int(value)
+
+
+def milestone_import_value(
+    field: str,
+    raw: Any,
+    session: Session,
+) -> MilestoneImportValue:
+    if field == "status":
+        return normalize_status(raw, session) if raw else None
+    if field == "due_date":
+        return parse_date(raw) if raw else None
+    return clean_cell(raw)
 
 
 def match_conference(session: Session, conference_number: str | None, acronym: str, year: int) -> Conference | None:
@@ -4079,7 +4190,7 @@ def minimum_import_fields(row: dict[str, Any]) -> bool:
 
 
 def conference_export_row(conference: Conference) -> dict[str, Any]:
-    row = {column: "" for column in CONFERENCE_COLUMNS}
+    row: dict[str, Any] = {column: "" for column in CONFERENCE_COLUMNS}
     for field, column in IMPORT_FIELD_MAP.items():
         value = getattr(conference, field, None)
         row[column] = value.isoformat() if isinstance(value, date) else value
@@ -4184,7 +4295,11 @@ def apply_import_row(row: dict[str, Any], session: Session, batch: ImportBatch, 
     return conference
 
 
-def import_value_for_field(field: str, raw: Any, session: Session) -> Any:
+def import_value_for_field(
+    field: str,
+    raw: Any,
+    session: Session,
+) -> ImportFieldValue | _SkipImportValue:
     value = clean_cell(raw)
     if value is None:
         return _SKIP_IMPORT_VALUE
@@ -4251,7 +4366,7 @@ def extract_text(filename: str, data: bytes) -> str:
             return f"Extraction failed: {exc}"
     if suffix == ".pdf":
         try:
-            import fitz
+            import fitz  # type: ignore[import-untyped]
 
             with fitz.open(stream=data, filetype="pdf") as doc:
                 return "\f".join(page.get_text() for page in doc)

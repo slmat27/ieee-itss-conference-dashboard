@@ -112,8 +112,14 @@ class KubernetesWorkerBackend:
         for item in payload.get("items", []) or []:
             if not isinstance(item, dict):
                 continue
-            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-            status = item.get("status") if isinstance(item.get("status"), dict) else {}
+            metadata_value = item.get("metadata")
+            status_value = item.get("status")
+            metadata: dict[str, Any] = (
+                metadata_value if isinstance(metadata_value, dict) else {}
+            )
+            status: dict[str, Any] = (
+                status_value if isinstance(status_value, dict) else {}
+            )
             pod_name = str(metadata.get("name") or "")
             if not pod_name:
                 continue

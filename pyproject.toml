@@ -27,6 +27,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "mypy",
+    "pandas-stubs>=3.0.5.260730",
     "pytest",
     "ruff",
 ]
