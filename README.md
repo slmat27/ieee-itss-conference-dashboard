@@ -1,72 +1,84 @@
 # IEEE ITSS Conference Status Dashboard
 
-Local-first web application for the IEEE Intelligent Transportation Systems Society VP for Conference Activities. It manages conference records, lifecycle phase suggestions, phase-aware scores, issues, imports, exports, knowledge documents, RAG assistant answers, and AI-assisted email drafts.
+Local-first web application for the IEEE Intelligent Transportation Systems Society VP for Conference Activities. It manages conference records, lifecycle phase suggestions, phase-aware scores, issues, imports, exports, knowledge documents, retrieval-assisted answers, and AI-assisted email drafts.
 
-The app uses FastAPI, SQLAlchemy 2, SQLite, pandas/openpyxl, a built-in local PDF writer, PyMuPDF, python-docx, the official OpenAI Python SDK for Azure OpenAI, React, TypeScript, Vite, React Router, TanStack Query, TanStack Table-ready data flows, Ant Design, and Recharts.
+## Architecture
 
-## Local Setup
+- **Backend:** FastAPI, SQLAlchemy 2, SQLite, pandas/openpyxl, PyMuPDF, python-docx, and the OpenAI Python SDK for optional Azure OpenAI calls.
+- **Frontend:** React, TypeScript, Vite, React Router, TanStack Query, Ant Design, and Recharts.
+- **Storage:** repository-local `data/` and `storage/` directories by default. These runtime directories are ignored by Git.
+- **Portable workflow:** `app.workflow.run(input_dir, output_dir)` validates conference CSV inputs independently of the web UI.
 
-Requirements:
+## Requirements
 
-- Windows 11
 - Python 3.12
-- `uv`
-- Node.js and npm
-- Chromium-based browser
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 24 or another version supported by the checked-in frontend dependencies
+- npm
 
-From this folder:
+## Setup
+
+From the repository root:
+
+```powershell
+uv sync
+Push-Location frontend
+npm ci
+Pop-Location
+Copy-Item .env.example .env  # optional; do not commit .env
+```
+
+Windows users can run the equivalent setup helper:
 
 ```powershell
 .\setup.ps1
 ```
 
-The setup script creates `data/`, installs backend dependencies with `uv`, and installs the React/Vite frontend dependencies from the internal Artifactory npm registry. If `.env` is missing, it creates one from `.env.example`.
-
-This POC folder already contains a local `.env` copied from the workspace as requested. It is ignored by Git. Do not commit real Azure OpenAI credentials.
+The public Python and npm registries are used by default. If your environment requires an approved mirror, set `UV_DEFAULT_INDEX` and/or `NPM_CONFIG_REGISTRY` in the current process; no private registry is required by the repository.
 
 ## Run
 
 Backend:
 
 ```powershell
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8029
+```
+
+Frontend, in a second terminal:
+
+```powershell
+Push-Location frontend
+npm run dev -- --host 127.0.0.1 --port 5191
+```
+
+Windows launchers are also provided:
+
+```powershell
 .\run-backend.ps1
-```
-
-Frontend:
-
-```powershell
 .\run-frontend.ps1
-```
-
-Both:
-
-```powershell
+# or start both:
 .\run-all.ps1
 ```
 
-Simplest Windows launcher:
+Open `http://127.0.0.1:5191`. The Vite development server proxies `/api` to the backend on port `8029`.
 
-```bat
-run-all.bat
+## Configuration and secrets
+
+`.env.example` contains safe placeholders. Real `.env` files are ignored and must never be committed. Conference management, scoring, imports, exports, and document storage work without AI configuration.
+
+Optional Azure OpenAI settings include:
+
+```env
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_API_KEY=
+AZURE_OPENAI_API_VERSION=
+AZURE_OPENAI_CHAT_DEPLOYMENT=
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT=
 ```
 
-Open:
+The Settings page masks the API key and can verify the configured chat deployment.
 
-```text
-http://127.0.0.1:5191
-```
-
-## Visual Baselines
-
-After UI changes, refresh local page screenshots:
-
-```powershell
-.\scripts\capture-page-screenshots.ps1 -FrontendUrl http://127.0.0.1:5191
-```
-
-Screenshots are overwritten in `webapp-backup/screenshots/`. That folder is ignored by Git and is only for local review before future UI edits.
-
-## Data Storage
+## Data storage
 
 Default local paths:
 
@@ -79,55 +91,66 @@ data/exports/
 storage/
 ```
 
-The first backend startup creates the SQLite schema, data directories, seeded lifecycle phases, statuses, conference series, milestone definitions, issue settings, and score weights.
+The first backend startup creates the SQLite schema, data directories, lifecycle phases, statuses, conference series, milestone definitions, issue settings, and score weights.
 
-## Azure OpenAI
+## Main features
 
-Backend-only settings:
-
-```env
-AZURE_OPENAI_ENDPOINT=
-AZURE_OPENAI_API_KEY=
-AZURE_OPENAI_API_VERSION=
-AZURE_OPENAI_CHAT_DEPLOYMENT=
-AZURE_OPENAI_EMBEDDING_DEPLOYMENT=
-```
-
-The copied workspace `.env` also uses `AZURE_OPENAI_DEPLOYMENT`; the backend accepts that as a chat deployment fallback. The Settings page masks the key, shows deployment names, and verifies the chat deployment. Conference management, imports, exports, scoring, and document storage work without Azure OpenAI.
-
-## Main Features
-
-- Add and enrich conferences with duplicate acronym-year and Record Number checks.
-- Track ITSS conference series, flagship rolling four-year ITSC and IV cards, lifecycle phases, suggested phase differences, and archive/restore.
-- Calculate transparent phase-aware scores, issue penalties, data completeness, status bands, score history, and snapshots.
+- Add and enrich conferences with duplicate acronym-year and record-number checks.
+- Track conference series, lifecycle phases, suggested phase differences, and archive/restore state.
+- Calculate transparent phase-aware scores, issue penalties, completeness, status bands, score history, and snapshots.
 - Detect rule-based issues and manage review assessments.
-- Download canonical Excel and CSV import templates plus a field guide.
-- Validate imports, preview changes, apply approved rows, store original files, create history, and support rollback hooks.
+- Download canonical Excel and CSV templates and validate imports before applying selected changes.
 - Export portfolio Excel and executive PDF reports.
-- Upload PDF, DOCX, TXT, and Markdown guidance documents, extract text, index local chunks, and retrieve cited excerpts.
-- Ask the Conference Operations Assistant questions against uploaded documents and selected conference facts.
-- Generate editable email drafts from conferences and issues using Azure OpenAI when configured, with local fallback text otherwise.
+- Upload PDF, DOCX, TXT, and Markdown guidance documents and retrieve cited excerpts.
+- Generate assistant answers and editable email drafts with Azure OpenAI when configured, with local fallbacks otherwise.
 
 ## Validation
 
-```powershell
-uv run python -m pytest tests -p no:cacheprovider
-```
-
-Creator Agent strict validation from the workspace root:
+Backend quality and tests:
 
 ```powershell
-uv run python scripts/validate_poc.py pocs/ieee-itss-conference-dashboard --strict
+uv run pytest
+uv run ruff check .
+uv run mypy app
 ```
 
-If the workspace-level `uv` Python requirement conflicts with local Python 3.12, run the validator with the Python 3.12 interpreter directly:
+Frontend quality and build:
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" scripts/validate_poc.py pocs/ieee-itss-conference-dashboard --strict
+Push-Location frontend
+npm ci
+npm run lint
+npm run build
 ```
 
-## Notes For Reviewers
+Focused workflow smoke test:
 
-The UI uses text-based IEEE/ITSS branding because no authorized logo assets were supplied. It uses IEEE Blue `#00629B` as the primary identity color and restrained neutral backgrounds for data-dense pages.
+```powershell
+uv run pytest tests/test_workflow.py
+```
 
-The POC is intentionally local-first. Promotion to `apps/experimental` should use the Creator Agent promotion flow so the platform manifest, image repository, LLM aliases, and deployment metadata are generated from this draft.
+The test suite also covers fresh database initialization, health-facing application setup, import previews and application, exports, document retrieval, template lifecycle operations, scoring, and secret masking.
+
+## Docker
+
+Build from the repository root:
+
+```powershell
+docker build -t ieee-itss-conference-dashboard .
+```
+
+Public registries are Dockerfile defaults. Approved mirrors can be supplied through the `NPM_REGISTRY_URL` and `PYPI_INDEX_URL` build arguments.
+
+## Visual baselines
+
+After UI changes, with the app running:
+
+```powershell
+.\scripts\capture-page-screenshots.ps1 -FrontendUrl http://127.0.0.1:5191
+```
+
+Screenshots are written to ignored `webapp-backup/screenshots/` for local review.
+
+## License
+
+No software license was present in the source project, so none has been added. The repository owner should choose and add an appropriate license before inviting external reuse or contributions.
