@@ -9,6 +9,29 @@ Local-first web application for the IEEE Intelligent Transportation Systems Soci
 - **Storage:** repository-local `data/` and `storage/` directories by default. These runtime directories are ignored by Git.
 - **Portable workflow:** `app.workflow.run(input_dir, output_dir)` validates conference CSV inputs independently of the web UI.
 
+## Repository layout
+
+| Path | Classification | Purpose |
+| --- | --- | --- |
+| `.env.example` | local development | Safe configuration template; real `.env` files remain ignored. |
+| `.github/` | contributor tooling | Pull-request and release-note metadata. |
+| `.gitignore` | maintenance | Excludes secrets, runtime data, caches, generated files, and personal wrappers. |
+| `CHANGELOG.md` | maintenance | Keep-a-Changelog release history. |
+| `Dockerfile` | build | Container image build definition. |
+| `README.md` | contributor tooling | Application, setup, migration, and validation guide. |
+| `RELEASING.md` | maintenance | Semantic-versioning and release procedure. |
+| `alembic.ini` | database migration | Alembic command configuration. |
+| `app/` | runtime | FastAPI backend, workflow, persistence, and migration utilities. |
+| `frontend/` | runtime | React application and build configuration; `AGENTS.md` and `skills/` guide Codex-assisted development only and are not runtime dependencies. |
+| `migrations/` | database migration | Version-controlled Alembic environment and reviewed schema history. |
+| `pyproject.toml` | build | Authoritative application version, Python dependencies, and backend tool configuration. |
+| `scripts/` | local development | Shared local launchers and developer utilities; see `scripts/README.md`. |
+| `tests/` | test | Backend, workflow, migration, and version-consistency tests using temporary fixtures. |
+| `uv.lock` | build | Reproducible Python dependency lock. |
+
+Private data, databases, uploads, generated reports, deployment notes, and
+machine-specific wrappers are intentionally not part of the tracked layout.
+
 ## Requirements
 
 - Python 3.12
@@ -31,7 +54,7 @@ Copy-Item .env.example .env  # optional; do not commit .env
 Windows users can run the equivalent setup helper:
 
 ```powershell
-.\setup.ps1
+.\scripts\local\setup.ps1
 ```
 
 The public Python and npm registries are used by default. If your environment requires an approved mirror, set `UV_DEFAULT_INDEX` and/or `NPM_CONFIG_REGISTRY` in the current process; no private registry is required by the repository.
@@ -59,10 +82,12 @@ npm run dev -- --host 127.0.0.1 --port 5191
 Windows launchers are also provided:
 
 ```powershell
-.\run-backend.ps1
-.\run-frontend.ps1
+.\scripts\local\run-backend.ps1
+.\scripts\local\run-frontend.ps1
 # or start both:
-.\run-all.ps1
+.\scripts\local\run-all.ps1
+# or use the batch launcher:
+.\scripts\local\run-all.bat
 ```
 
 Open `http://127.0.0.1:5191`. The Vite development server proxies `/api` to the backend on port `8029`.
@@ -204,10 +229,18 @@ Public registries are Dockerfile defaults. Approved mirrors can be supplied thro
 After UI changes, with the app running:
 
 ```powershell
-.\scripts\capture-page-screenshots.ps1 -FrontendUrl http://127.0.0.1:5191
+.\scripts\dev\capture-page-screenshots.ps1 -FrontendUrl http://127.0.0.1:5191
 ```
 
 Screenshots are written to ignored `webapp-backup/screenshots/` for local review.
+
+## Versioning and releases
+
+The project follows Semantic Versioning. `pyproject.toml` is the authoritative
+application version, and the frontend package version must match it. The
+current development milestone is `0.1.0`; see `CHANGELOG.md` and
+`RELEASING.md` for the release process. No tag or GitHub Release is created
+until the release is approved and merged to `main`.
 
 ## License
 

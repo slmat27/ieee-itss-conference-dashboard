@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
-Set-Location $PSScriptRoot
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+Set-Location -LiteralPath $ProjectRoot
 
 function Import-DotEnv {
   param([string]$Path)
@@ -16,10 +17,10 @@ function Import-DotEnv {
   }
 }
 
-Import-DotEnv (Join-Path $PSScriptRoot ".env")
+Import-DotEnv (Join-Path $ProjectRoot ".env")
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-  throw "uv is required. Install uv, then run setup.ps1."
+  throw "uv is required. Install uv, then run scripts/local/setup.ps1."
 }
 
 if (-not $env:APP_ENV) { $env:APP_ENV = "local" }
@@ -27,5 +28,5 @@ if (-not $env:HOST) { $env:HOST = "127.0.0.1" }
 $port = if ($env:PORT) { $env:PORT } elseif ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { "8029" }
 $env:PORT = $port
 $env:BACKEND_PORT = $port
-$env:UV_CACHE_DIR = Join-Path $PSScriptRoot ".uv-cache"
+$env:UV_CACHE_DIR = Join-Path $ProjectRoot ".uv-cache"
 uv run python -m app.server

@@ -6,7 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 if (-not $OutputDir) {
   $OutputDir = Join-Path $ProjectRoot "webapp-backup\screenshots"
 }

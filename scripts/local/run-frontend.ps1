@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
-Set-Location $PSScriptRoot
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+Set-Location -LiteralPath $ProjectRoot
 
 function Import-DotEnv {
   param([string]$Path)
@@ -16,16 +17,16 @@ function Import-DotEnv {
   }
 }
 
-Import-DotEnv (Join-Path $PSScriptRoot ".env")
+Import-DotEnv (Join-Path $ProjectRoot ".env")
 
 if (-not $env:APP_ENV) { $env:APP_ENV = "local" }
 if (-not $env:BACKEND_PORT -and $env:PORT) { $env:BACKEND_PORT = $env:PORT }
 $port = if ($env:FRONTEND_PORT) { $env:FRONTEND_PORT } else { "5191" }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-  throw "npm is required for the React/Vite frontend. Install Node.js, then run setup.ps1."
+  throw "npm is required for the React/Vite frontend. Install Node.js, then run scripts/local/setup.ps1."
 }
 
-$env:NPM_CONFIG_CACHE = Join-Path $PSScriptRoot ".npm-cache"
+$env:NPM_CONFIG_CACHE = Join-Path $ProjectRoot ".npm-cache"
 if (-not (Test-Path "frontend\node_modules")) {
   Write-Host "Installing frontend dependencies from the configured npm registry..."
   Push-Location frontend

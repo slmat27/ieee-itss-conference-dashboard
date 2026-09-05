@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
-Set-Location $PSScriptRoot
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+Set-Location -LiteralPath $ProjectRoot
 
 function Import-DotEnv {
   param([string]$Path)
@@ -47,7 +48,7 @@ function Wait-ForUrl {
   throw "$Name did not answer within $TimeoutSeconds seconds. Check its visible service window."
 }
 
-$envPath = Join-Path $PSScriptRoot ".env"
+$envPath = Join-Path $ProjectRoot ".env"
 Import-DotEnv $envPath
 if (-not $env:APP_ENV) { $env:APP_ENV = "local" }
 if (-not $env:HOST) { $env:HOST = "127.0.0.1" }
@@ -64,14 +65,14 @@ if (Test-Url "$backendUrl/healthz") {
   Write-Host "Backend is already running."
 }
 else {
-  Start-Process powershell -WorkingDirectory $PSScriptRoot -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "run-backend.ps1")
+  Start-Process powershell -WorkingDirectory $ProjectRoot -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "run-backend.ps1")
 }
 Start-Sleep -Seconds 2
 if (Test-Url "$frontendUrl/") {
   Write-Host "Frontend is already running."
 }
 else {
-  Start-Process powershell -WorkingDirectory $PSScriptRoot -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "run-frontend.ps1")
+  Start-Process powershell -WorkingDirectory $ProjectRoot -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "run-frontend.ps1")
 }
 
 Wait-ForUrl "$backendUrl/healthz" "Backend"
