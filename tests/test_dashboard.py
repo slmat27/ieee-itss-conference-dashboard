@@ -14,6 +14,8 @@ from app.main import create_app
 
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.setenv("ALLOW_ANONYMOUS_LOCAL", "true")
     monkeypatch.setenv("APP_DATABASE_PATH", str(tmp_path / "data" / "itss_dashboard.db"))
     monkeypatch.setenv("APP_DOCUMENT_PATH", str(tmp_path / "data" / "documents"))

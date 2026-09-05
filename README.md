@@ -41,8 +41,13 @@ The public Python and npm registries are used by default. If your environment re
 Backend:
 
 ```powershell
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8029
+$env:APP_ENV = "local"
+uv run python -m app.server
 ```
+
+The portable Python entrypoint validates `HOST` and `PORT`. Local defaults are
+`127.0.0.1:8029`; `BACKEND_PORT` remains supported by the local scripts and Vite
+proxy.
 
 Frontend, in a second terminal:
 
@@ -64,9 +69,11 @@ Open `http://127.0.0.1:5191`. The Vite development server proxies `/api` to the 
 
 ## Configuration and secrets
 
-`.env.example` contains safe placeholders. Real `.env` files are ignored and must never be committed. Conference management, scoring, imports, exports, and document storage work without AI configuration.
+`.env.example` contains safe placeholders. Real `.env` files are ignored and must never be committed. `APP_ENV` must be one of `local`, `test`, `staging`, or `production`; tests explicitly use `test`, and the Windows launchers provide `local` when it is absent.
 
-Optional Azure OpenAI settings include:
+Local development keeps the existing SQLite and relative storage defaults. `HOST` and `PORT` control the portable backend listener, while `BACKEND_PORT` and `FRONTEND_PORT` remain local Vite conveniences. Staging and production require `DATABASE_URL`, absolute persistent storage paths, anonymous access disabled, and a non-default `APP_STORAGE_SECRET`. They are intentionally blocked until server-database support and Alembic migrations are implemented in the next database-portability phase.
+
+Conference management, scoring, imports, exports, and document storage work without AI configuration. Optional Azure OpenAI settings include:
 
 ```env
 AZURE_OPENAI_ENDPOINT=
@@ -91,7 +98,7 @@ data/exports/
 storage/
 ```
 
-The first backend startup creates the SQLite schema, data directories, lifecycle phases, statuses, conference series, milestone definitions, issue settings, and score weights.
+The first local/test backend startup creates the SQLite schema, data directories, lifecycle phases, statuses, conference series, milestone definitions, issue settings, and score weights. Deployed environments must use explicit absolute persistent paths; no existing database or uploaded files are copied by configuration setup.
 
 ## Main features
 
@@ -139,7 +146,7 @@ Build from the repository root:
 docker build -t ieee-itss-conference-dashboard .
 ```
 
-Public registries are Dockerfile defaults. Approved mirrors can be supplied through the `NPM_REGISTRY_URL` and `PYPI_INDEX_URL` build arguments.
+Public registries are Dockerfile defaults. Approved mirrors can be supplied through the `NPM_REGISTRY_URL` and `PYPI_INDEX_URL` build arguments. The image uses the same `python -m app.server` entrypoint and reads `APP_ENV`, `HOST`, and `PORT`; it is not a production-ready deployment definition.
 
 ## Visual baselines
 

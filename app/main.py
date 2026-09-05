@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import math
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -41,27 +40,37 @@ from .storage import RunRecord, RunStore, StoredFile, UploadItem
 from .worker_api import verify_worker_token
 
 
-def create_app(*, storage_dir: Path | None = None) -> FastAPI:
-    settings = AppSettings.from_env(storage_dir=storage_dir)
+def create_app(
+    *,
+    storage_dir: Path | None = None,
+    settings: AppSettings | None = None,
+) -> FastAPI:
+    if settings is not None and storage_dir is not None:
+        raise ValueError("Pass settings or storage_dir, not both.")
+    settings = settings or AppSettings.from_env(storage_dir=storage_dir)
     metrics = Metrics()
     event_bus = RunEventBus()
     store = RunStore(
         settings.storage_dir,
         max_upload_files=settings.max_upload_files,
         max_upload_size_bytes=settings.max_upload_size_bytes,
+        storage_secret=settings.storage_secret,
     )
     manager = RunManager(
         store=store,
         metrics=metrics,
         event_bus=event_bus,
-        worker_backend=build_worker_backend(store),
+        worker_backend=build_worker_backend(
+            store,
+            worker_token_secret=settings.worker_api_token_secret,
+        ),
         retention_cleanup=retention_cleanup_config_from_env(),
         max_concurrent_runs=settings.max_concurrent_runs,
     )
 
     @asynccontextmanager
     async def lifespan(_api: FastAPI):
-        init_dashboard()
+        init_dashboard(settings)
         yield
         manager.shutdown(wait=False)
 
@@ -135,13 +144,18 @@ def create_app(*, storage_dir: Path | None = None) -> FastAPI:
     @api.websocket("/api/notifications/ws")
     async def notification_stream(websocket: WebSocket) -> None:
         try:
-            user = current_user(websocket)
+            user = current_user(
+                websocket,
+                allow_anonymous_local=settings.allow_anonymous_local,
+            )
         except PermissionError:
             await websocket.close(code=1008)
             return
 
         await websocket.accept()
-        subscription = event_bus.subscribe(storage_user_key(user))
+        subscription = event_bus.subscribe(
+            storage_user_key(user, secret=settings.storage_secret)
+        )
         try:
             while True:
                 try:
@@ -253,7 +267,11 @@ def create_app(*, storage_dir: Path | None = None) -> FastAPI:
         run_id: str,
         authorization: str | None = Header(default=None),
     ) -> FileResponse:
-        owner_key = _worker_owner_key(authorization, run_id)
+        owner_key = _worker_owner_key(
+            authorization,
+            run_id,
+            secret=settings.worker_api_token_secret,
+        )
         record = manager.store.get_by_owner_key(owner_key=owner_key, run_id=run_id)
         if record is None:
             raise HTTPException(status_code=404, detail="Unknown run.")
@@ -270,7 +288,11 @@ def create_app(*, storage_dir: Path | None = None) -> FastAPI:
         run_id: str,
         authorization: str | None = Header(default=None),
     ) -> dict[str, str]:
-        owner_key = _worker_owner_key(authorization, run_id)
+        owner_key = _worker_owner_key(
+            authorization,
+            run_id,
+            secret=settings.worker_api_token_secret,
+        )
         try:
             payload = await request.json()
             if not isinstance(payload, dict):
@@ -291,7 +313,11 @@ def create_app(*, storage_dir: Path | None = None) -> FastAPI:
         run_id: str,
         authorization: str | None = Header(default=None),
     ) -> dict[str, str]:
-        owner_key = _worker_owner_key(authorization, run_id)
+        owner_key = _worker_owner_key(
+            authorization,
+            run_id,
+            secret=settings.worker_api_token_secret,
+        )
         try:
             record = manager.store.apply_worker_result_archive(
                 owner_key=owner_key,
@@ -304,7 +330,7 @@ def create_app(*, storage_dir: Path | None = None) -> FastAPI:
         event_bus.publish(owner_key, run_event(record, event_type))
         return {"status": "ok"}
 
-    frontend_dist_dir = _frontend_dist_dir()
+    frontend_dist_dir = _frontend_dist_dir(settings)
     if frontend_dist_dir and (frontend_dist_dir / "assets").exists():
         api.mount(
             "/assets",
@@ -335,11 +361,10 @@ def create_app(*, storage_dir: Path | None = None) -> FastAPI:
     return api
 
 
-def _frontend_dist_dir() -> Path | None:
-    env_value = os.environ.get("FRONTEND_DIST_DIR")
+def _frontend_dist_dir(settings: AppSettings) -> Path | None:
     candidates: list[Path] = []
-    if env_value:
-        candidates.append(Path(env_value))
+    if settings.frontend_dist_dir is not None:
+        candidates.append(settings.frontend_dist_dir)
     candidates.extend(
         [
             Path("/app/static"),
@@ -358,17 +383,30 @@ app = create_app()
 
 def _require_user(request: Request) -> UserIdentity:
     try:
-        return current_user(request)
+        settings: AppSettings = request.app.state.settings
+        return current_user(
+            request,
+            allow_anonymous_local=settings.allow_anonymous_local,
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
-def _worker_owner_key(authorization: str | None, run_id: str) -> str:
+def _worker_owner_key(
+    authorization: str | None,
+    run_id: str,
+    *,
+    secret: str,
+) -> str:
     prefix = "Bearer "
     if not authorization or not authorization.startswith(prefix):
         raise HTTPException(status_code=401, detail="Missing worker token.")
     try:
-        payload = verify_worker_token(authorization[len(prefix) :].strip(), run_id=run_id)
+        payload = verify_worker_token(
+            authorization[len(prefix) :].strip(),
+            run_id=run_id,
+            secret=secret,
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     return str(payload["owner_key"])

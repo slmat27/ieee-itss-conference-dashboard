@@ -9,12 +9,17 @@ function Import-DotEnv {
     $line = $_.Trim()
     if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) { return }
     $key, $value = $line.Split("=", 2)
-    [Environment]::SetEnvironmentVariable($key.Trim(), $value.Trim().Trim('"').Trim("'"), "Process")
+    $key = $key.Trim()
+    if ($null -eq [Environment]::GetEnvironmentVariable($key, "Process")) {
+      [Environment]::SetEnvironmentVariable($key, $value.Trim().Trim('"').Trim("'"), "Process")
+    }
   }
 }
 
 Import-DotEnv (Join-Path $PSScriptRoot ".env")
 
+if (-not $env:APP_ENV) { $env:APP_ENV = "local" }
+if (-not $env:BACKEND_PORT -and $env:PORT) { $env:BACKEND_PORT = $env:PORT }
 $port = if ($env:FRONTEND_PORT) { $env:FRONTEND_PORT } else { "5191" }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   throw "npm is required for the React/Vite frontend. Install Node.js, then run setup.ps1."

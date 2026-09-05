@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 from dataclasses import dataclass
 
 from starlette.requests import HTTPConnection
@@ -16,7 +15,11 @@ class UserIdentity:
     groups: tuple[str, ...] = ()
 
 
-def current_user(request: HTTPConnection) -> UserIdentity:
+def current_user(
+    request: HTTPConnection,
+    *,
+    allow_anonymous_local: bool,
+) -> UserIdentity:
     # CREATOR_AGENT_CONTRACT: Promoted apps must trust identity only from
     # oauth2-proxy/Istio-mediated headers. Do not add client-supplied user ids,
     # query parameters, or local login forms here.
@@ -50,7 +53,7 @@ def current_user(request: HTTPConnection) -> UserIdentity:
             groups=groups,
         )
 
-    if os.environ.get("ALLOW_ANONYMOUS_LOCAL", "").lower() == "true":
+    if allow_anonymous_local:
         # CREATOR_AGENT_CONTRACT: This fallback is for local development only.
         # Do not enable it in promoted app values.
         return UserIdentity(
@@ -63,10 +66,9 @@ def current_user(request: HTTPConnection) -> UserIdentity:
     raise PermissionError("Missing trusted identity headers.")
 
 
-def storage_user_key(identity: UserIdentity) -> str:
+def storage_user_key(identity: UserIdentity, *, secret: str) -> str:
     # CREATOR_AGENT_CONTRACT: Owner keys partition app-managed storage by the
     # authenticated user without storing raw stable user ids in paths.
-    secret = os.environ.get("APP_STORAGE_SECRET", "local-development-secret")
     return hmac.new(
         secret.encode("utf-8"),
         identity.user_id.encode("utf-8"),

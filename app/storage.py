@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from .config import DEFAULT_STORAGE_SECRET
 from .identity import UserIdentity, storage_user_key
 
 SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._ -]{1,160}$")
@@ -115,10 +116,12 @@ class RunStore:
         *,
         max_upload_files: int = DEFAULT_MAX_UPLOAD_FILES,
         max_upload_size_bytes: int = DEFAULT_MAX_UPLOAD_SIZE_BYTES,
+        storage_secret: str = DEFAULT_STORAGE_SECRET,
     ) -> None:
         self.root = root
         self.max_upload_files = max_upload_files
         self.max_upload_size_bytes = max_upload_size_bytes
+        self.storage_secret = storage_secret
         self._lock = threading.RLock()
 
     def create_run(
@@ -137,7 +140,7 @@ class RunStore:
         if len(uploads) > self.max_upload_files:
             raise ValueError(f"At most {self.max_upload_files} files are allowed.")
 
-        owner_key = storage_user_key(owner)
+        owner_key = storage_user_key(owner, secret=self.storage_secret)
         run_id = uuid.uuid4().hex
         workspace_dir = self._run_dir(owner_key, run_id)
         self._ensure_workspace(workspace_dir)
@@ -171,7 +174,7 @@ class RunStore:
         return record
 
     def list_runs(self, *, owner: UserIdentity) -> list[RunRecord]:
-        owner_key = storage_user_key(owner)
+        owner_key = storage_user_key(owner, secret=self.storage_secret)
         runs_root = self.root / "users" / owner_key / "runs"
         if not runs_root.exists():
             return []
@@ -182,7 +185,7 @@ class RunStore:
         return records
 
     def get_run(self, *, owner: UserIdentity, run_id: str) -> RunRecord | None:
-        return self.get_by_owner_key(owner_key=storage_user_key(owner), run_id=run_id)
+        return self.get_by_owner_key(owner_key=storage_user_key(owner, secret=self.storage_secret), run_id=run_id)
 
     def get_by_owner_key(self, *, owner_key: str, run_id: str) -> RunRecord | None:
         if not RUN_ID_RE.fullmatch(run_id):
@@ -193,7 +196,7 @@ class RunStore:
         return RunRecord.from_dict(_read_json_with_retry(metadata_path))
 
     def delete_run(self, *, owner: UserIdentity, run_id: str) -> bool:
-        owner_key = storage_user_key(owner)
+        owner_key = storage_user_key(owner, secret=self.storage_secret)
         if not RUN_ID_RE.fullmatch(run_id):
             return False
         run_dir = self._run_dir(owner_key, run_id)

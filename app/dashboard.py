@@ -44,6 +44,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
+from .config import AppSettings, ConfigurationError, load_local_env
+
 IEEE_BLUE = "#00629B"
 IEEE_TEAL = "#00843D"
 IEEE_AMBER = "#FFB81C"
@@ -246,28 +248,25 @@ DEFAULT_ASSISTANT_SYSTEM_PROMPT = (
 )
 
 
-def load_local_env(root: Path | None = None) -> None:
-    root = root or Path(__file__).resolve().parents[1]
-    env_path = root / ".env"
-    if not env_path.exists():
-        return
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and (key not in os.environ or os.environ.get(key, "").strip() == ""):
-            os.environ[key] = value
-
-
-APP_ROOT = Path(__file__).resolve().parents[1]
+PATH_SETTING_ATTRIBUTES = {
+    "APP_DATABASE_PATH": "database_path",
+    "APP_DOCUMENT_PATH": "document_path",
+    "APP_IMPORT_PATH": "import_path",
+    "APP_EXPORT_PATH": "export_path",
+    "APP_VECTOR_PATH": "vector_path",
+    "APP_TEMPLATE_PATH": "template_path",
+}
 
 
 def app_path(env_name: str, default: str) -> Path:
-    path = Path(os.environ.get(env_name, default)).expanduser()
-    return path if path.is_absolute() else APP_ROOT / path
+    attribute = PATH_SETTING_ATTRIBUTES.get(env_name)
+    if attribute is None:
+        raise ConfigurationError(f"Unsupported application path setting: {env_name}.")
+    settings = _state.settings if _state is not None else AppSettings.from_env()
+    configured = getattr(settings, attribute)
+    if not isinstance(configured, Path):
+        raise ConfigurationError(f"{env_name} must resolve to a filesystem path.")
+    return configured
 
 
 class Base(DeclarativeBase):
@@ -603,29 +602,39 @@ class DashboardSettings(Base):
 class DashboardState:
     engine: Any
     session_factory: sessionmaker[Session]
+    settings: AppSettings
 
 
 _state: DashboardState | None = None
 
 
-def init_dashboard() -> DashboardState:
+def init_dashboard(settings: AppSettings | None = None) -> DashboardState:
     global _state
-    load_local_env()
+    settings = settings or AppSettings.from_env()
+    if settings.database_url is not None:
+        raise ConfigurationError(
+            "DATABASE_URL-backed startup is intentionally unavailable until Prompt 4 "
+            "implements database portability and Alembic migrations."
+        )
     for directory in [
-        app_path("APP_DOCUMENT_PATH", "./data/documents"),
-        app_path("APP_IMPORT_PATH", "./data/imports"),
-        app_path("APP_EXPORT_PATH", "./data/exports"),
-        app_path("APP_VECTOR_PATH", "./data/vector_store"),
-        app_path("APP_TEMPLATE_PATH", "./data/templates"),
+        settings.document_path,
+        settings.import_path,
+        settings.export_path,
+        settings.vector_path,
+        settings.template_path,
     ]:
         directory.mkdir(parents=True, exist_ok=True)
-    db_path = app_path("APP_DATABASE_PATH", "./data/itss_dashboard.db")
+    db_path = settings.database_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(f"sqlite:///{db_path.as_posix()}", future=True)
     Base.metadata.create_all(engine)
     ensure_database_schema(engine)
     factory = sessionmaker(engine, expire_on_commit=False, future=True)
-    state = DashboardState(engine=engine, session_factory=factory)
+    state = DashboardState(
+        engine=engine,
+        session_factory=factory,
+        settings=settings,
+    )
     _state = state
     with factory() as session:
         seed_configuration(session)
@@ -5132,7 +5141,7 @@ def current_surplus(conference: Conference) -> float | None:
 
 
 def sqlite_health() -> dict[str, Any]:
-    db_path = app_path("APP_DATABASE_PATH", "./data/itss_dashboard.db")
+    db_path = get_state().settings.database_path
     with sqlite3.connect(db_path) as connection:
         row = connection.execute("select count(*) from conferences").fetchone()
     return {"database": str(db_path), "conference_count": row[0]}
