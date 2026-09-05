@@ -4,7 +4,7 @@ Local-first web application for the IEEE Intelligent Transportation Systems Soci
 
 ## Architecture
 
-- **Backend:** FastAPI, SQLAlchemy 2, SQLite, pandas/openpyxl, PyMuPDF, python-docx, and the OpenAI Python SDK for optional Azure OpenAI calls.
+- **Backend:** FastAPI, SQLAlchemy 2, Alembic, local SQLite, MariaDB 10.6 through PyMySQL, pandas/openpyxl, PyMuPDF, python-docx, and the OpenAI Python SDK for optional Azure OpenAI calls.
 - **Frontend:** React, TypeScript, Vite, React Router, TanStack Query, Ant Design, and Recharts.
 - **Storage:** repository-local `data/` and `storage/` directories by default. These runtime directories are ignored by Git.
 - **Portable workflow:** `app.workflow.run(input_dir, output_dir)` validates conference CSV inputs independently of the web UI.
@@ -71,7 +71,9 @@ Open `http://127.0.0.1:5191`. The Vite development server proxies `/api` to the 
 
 `.env.example` contains safe placeholders. Real `.env` files are ignored and must never be committed. `APP_ENV` must be one of `local`, `test`, `staging`, or `production`; tests explicitly use `test`, and the Windows launchers provide `local` when it is absent.
 
-Local development keeps the existing SQLite and relative storage defaults. `HOST` and `PORT` control the portable backend listener, while `BACKEND_PORT` and `FRONTEND_PORT` remain local Vite conveniences. Staging and production require `DATABASE_URL`, absolute persistent storage paths, anonymous access disabled, and a non-default `APP_STORAGE_SECRET`. They are intentionally blocked until server-database support and Alembic migrations are implemented in the next database-portability phase.
+`DATABASE_URL` is authoritative when supplied. Local/test development otherwise keeps the existing `APP_DATABASE_PATH` SQLite fallback and relative storage defaults. `HOST` and `PORT` control the portable backend listener, while `BACKEND_PORT` and `FRONTEND_PORT` remain local Vite conveniences.
+
+Staging and production require a MariaDB URL such as `mysql+pymysql://user:<password>@host/database?charset=utf8mb4`, absolute persistent storage paths, anonymous access disabled, and non-default storage/worker secrets. Application startup validates connectivity and the Alembic head revision before accepting traffic. It does not create tables, alter schema, run migrations, seed defaults, or recalculate all conferences in deployed environments.
 
 Conference management, scoring, imports, exports, and document storage work without AI configuration. Optional Azure OpenAI settings include:
 
@@ -98,7 +100,56 @@ data/exports/
 storage/
 ```
 
-The first local/test backend startup creates the SQLite schema, data directories, lifecycle phases, statuses, conference series, milestone definitions, issue settings, and score weights. Deployed environments must use explicit absolute persistent paths; no existing database or uploaded files are copied by configuration setup.
+The first local/test SQLite startup retains a clearly isolated legacy compatibility path that creates missing tables, applies the historical additive columns, seeds local reference data, and recalculates conferences. Deployed environments never use that path. They require an explicit Alembic migration step and explicit absolute persistent paths; no existing database or uploaded files are copied by configuration setup.
+
+## Database schema and migration
+
+Alembic is the schema source of truth for new databases. Application workers only verify the current revision. The reviewed baseline preserves SQLite semantics while mapping unrestricted text to MariaDB `LONGTEXT`, binary payloads to `LONGBLOB`, Python/SQLite floating-point values to MariaDB `DOUBLE`, and timestamps to `DATETIME(6)` so existing document text, import previews, file payloads, scores, and microseconds are not narrowed during transfer.
+
+Create or upgrade a database:
+
+```powershell
+$env:APP_ENV = "test"
+$env:DATABASE_URL = "sqlite+pysqlite:///D:/absolute/path/new-dashboard.db"
+uv run alembic upgrade head
+
+# MariaDB 10.6 example; run in the fully configured deployment environment.
+$env:APP_ENV = "staging"
+$env:DATABASE_URL = "mysql+pymysql://user:<password>@host/database?charset=utf8mb4"
+uv run alembic upgrade head
+uv run python -m app.database_seed
+```
+
+`app.database_seed` is the explicit, idempotent reference-data step for a new empty database. It does not recalculate existing conferences unless the operator deliberately adds `--recalculate-existing`.
+
+Adopt an existing SQLite schema only after working on a copy. Dry-run is the default; apply creates a backup before adding the Alembic revision and never runs schema upgrades:
+
+```powershell
+uv run python -m app.database_adoption --database D:\backup\dashboard-copy.db
+uv run python -m app.database_adoption `
+  --database D:\backup\dashboard-copy.db `
+  --apply `
+  --backup-path D:\backup\dashboard-copy.pre-alembic.db
+```
+
+The command refuses the default local database path unless `--confirm-original` is explicitly supplied. A schema mismatch or unexpected Alembic revision is never stamped.
+
+The SQLite-to-MariaDB command is also dry-run by default. The target URL may be read from `DATABASE_URL`, preventing credentials from appearing in command output:
+
+```powershell
+$env:DATABASE_URL = "mysql+pymysql://user:<password>@host/database?charset=utf8mb4"
+uv run python -m app.sqlite_to_mariadb `
+  --source D:\backup\dashboard-copy.db `
+  --target-database-url-env DATABASE_URL `
+  --verify-known-local-counts `
+  --report-dir migration-reports
+
+# Add --apply only after reviewing both reconciliation reports.
+```
+
+The target must have no application data unless the explicit `--resume` mode is used. Reports contain counts, null distributions, deterministic checksums, primary-key checks, and grouped foreign-key violations, but no row contents or credentials. Optional file trees can be included with paired options such as `--documents-source`/`--documents-target`, `--vectors-source`/`--vectors-target`, and equivalent pairs for templates, imports, exports, and runs.
+
+For rollback, retain the untouched SQLite source, the adoption backup, the MariaDB backup or empty pre-cutover database, and one consistent backup of all persistent file trees. Database and file migration are separate operational steps; do not switch application traffic until reconciliation succeeds.
 
 ## Main features
 
@@ -136,7 +187,7 @@ Focused workflow smoke test:
 uv run pytest tests/test_workflow.py
 ```
 
-The test suite also covers fresh database initialization, health-facing application setup, import previews and application, exports, document retrieval, template lifecycle operations, scoring, and secret masking.
+The test suite also covers Alembic upgrades, SQLite adoption and mismatch refusal, migration dry-runs, non-empty target refusal, data-type reconciliation, database health, fresh local initialization, imports, exports, document retrieval, template lifecycle operations, scoring, and secret masking.
 
 ## Docker
 
@@ -146,7 +197,7 @@ Build from the repository root:
 docker build -t ieee-itss-conference-dashboard .
 ```
 
-Public registries are Dockerfile defaults. Approved mirrors can be supplied through the `NPM_REGISTRY_URL` and `PYPI_INDEX_URL` build arguments. The image uses the same `python -m app.server` entrypoint and reads `APP_ENV`, `HOST`, and `PORT`; it is not a production-ready deployment definition.
+Public registries are Dockerfile defaults. Approved mirrors can be supplied through the `NPM_REGISTRY_URL` and `PYPI_INDEX_URL` build arguments. The image includes `alembic.ini` and the reviewed migration history, uses the same `python -m app.server` entrypoint, and reads `APP_ENV`, `HOST`, and `PORT`. It verifies but never runs migrations automatically, and it is not a production-ready deployment definition.
 
 ## Visual baselines
 

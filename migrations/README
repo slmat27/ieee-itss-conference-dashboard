@@ -1,0 +1,3 @@
+Alembic migrations for the IEEE ITSS Conference Dashboard.
+
+Application workers verify the revision but never run migrations automatically.

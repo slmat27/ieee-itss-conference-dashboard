@@ -15,6 +15,14 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 SUPPORTED_APP_ENVIRONMENTS = frozenset({"local", "test", "staging", "production"})
 DEPLOYED_APP_ENVIRONMENTS = frozenset({"staging", "production"})
 DEFAULT_STORAGE_SECRET = "local-development-secret"
+SUPPORTED_DATABASE_DRIVERS = frozenset(
+    {
+        "sqlite",
+        "sqlite+pysqlite",
+        "mysql+pymysql",
+        "mariadb+pymysql",
+    }
+)
 VALID_LOG_LEVELS = frozenset({"trace", "debug", "info", "warning", "error", "critical"})
 HOSTNAME_RE = re.compile(
     r"(?=^.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$"
@@ -236,11 +244,6 @@ class AppSettings:
         if settings.is_deployed:
             for name, path in settings.persistent_paths:
                 _ensure_writable_directory(name, path)
-            raise ConfigurationError(
-                f"APP_ENV={settings.app_env} startup is intentionally blocked until "
-                "Prompt 4 implements DATABASE_URL engine support, dialect-neutral "
-                "health checks, and Alembic migrations."
-            )
         return settings
 
 
@@ -287,6 +290,17 @@ def _validate_database_url(value: str) -> None:
         raise ConfigurationError("DATABASE_URL is invalid.") from None
     if not parsed.drivername or "://" not in value:
         raise ConfigurationError("DATABASE_URL is invalid.")
+    if parsed.drivername not in SUPPORTED_DATABASE_DRIVERS:
+        supported = ", ".join(sorted(SUPPORTED_DATABASE_DRIVERS))
+        raise ConfigurationError(
+            f"DATABASE_URL must use one of the supported drivers: {supported}."
+        )
+    if parsed.drivername in {"mysql+pymysql", "mariadb+pymysql"}:
+        charset = str(parsed.query.get("charset", "")).lower()
+        if charset != "utf8mb4":
+            raise ConfigurationError(
+                "MariaDB DATABASE_URL must include charset=utf8mb4."
+            )
 
 
 def _host_value(values: Mapping[str, str], *, required: bool) -> str:

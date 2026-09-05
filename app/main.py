@@ -20,7 +20,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.websockets import WebSocketDisconnect
 
 from .config import AppSettings
-from .dashboard import init_dashboard, router as dashboard_router
+from .dashboard import get_state, init_dashboard, router as dashboard_router
+from .database import database_health
 from .events import RunEventBus, heartbeat_event, run_event
 from .identity import UserIdentity, current_user, storage_user_key
 from .llm import load_llm_gateway_config
@@ -82,8 +83,20 @@ def create_app(
     api.state.event_bus = event_bus
 
     @api.get("/healthz")
-    async def healthz() -> dict[str, str]:
-        return {"status": "ok"}
+    async def healthz() -> JSONResponse:
+        health = database_health(
+            get_state().engine,
+            require_revision=settings.is_deployed,
+        )
+        status_code = 200 if health["status"] == "ok" else 503
+        return JSONResponse(
+            {
+                "status": health["status"],
+                "database": health["database"],
+                "schema": health["schema"],
+            },
+            status_code=status_code,
+        )
 
     @api.get("/metrics")
     async def metrics_endpoint() -> PlainTextResponse:

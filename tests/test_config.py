@@ -12,7 +12,7 @@ from app.config import APP_ROOT, AppSettings, ConfigurationError
 def _deployed_env(tmp_path: Path, **overrides: str) -> dict[str, str]:
     env = {
         "APP_ENV": "production",
-        "DATABASE_URL": "postgresql+psycopg://app:database-secret@db.example/itss",
+        "DATABASE_URL": "mysql+pymysql://app:database-secret@db.example/itss?charset=utf8mb4",
         "HOST": "0.0.0.0",
         "PORT": "8080",
         "APP_DOCUMENT_PATH": str(tmp_path / "documents"),
@@ -158,7 +158,7 @@ def test_database_url_is_accepted_as_secret_configuration() -> None:
     settings = AppSettings.from_env(
         environ={
             "APP_ENV": "test",
-            "DATABASE_URL": f"postgresql://user:{secret}@db.example/test",
+            "DATABASE_URL": f"mysql+pymysql://user:{secret}@db.example/test?charset=utf8mb4",
         }
     )
 
@@ -166,9 +166,21 @@ def test_database_url_is_accepted_as_secret_configuration() -> None:
     assert secret not in repr(settings)
 
 
-def test_deployed_startup_remains_blocked_until_prompt_4(tmp_path: Path) -> None:
-    with pytest.raises(ConfigurationError, match="Prompt 4"):
-        AppSettings.from_env(environ=_deployed_env(tmp_path))
+def test_mariadb_requires_utf8mb4() -> None:
+    with pytest.raises(ConfigurationError, match="charset=utf8mb4"):
+        AppSettings.from_env(
+            environ={
+                "APP_ENV": "test",
+                "DATABASE_URL": "mysql+pymysql://user:secret@db.example/test",
+            }
+        )
+
+
+def test_deployed_configuration_accepts_mariadb(tmp_path: Path) -> None:
+    settings = AppSettings.from_env(environ=_deployed_env(tmp_path))
+
+    assert settings.app_env == "production"
+    assert settings.database_url is not None
 
 
 def test_local_dashboard_initialization_still_uses_sqlite(tmp_path: Path) -> None:
@@ -187,5 +199,5 @@ def test_local_dashboard_initialization_still_uses_sqlite(tmp_path: Path) -> Non
 
     state = dashboard.init_dashboard(settings)
 
-    assert state.engine.url.drivername == "sqlite"
+    assert state.engine.url.get_backend_name() == "sqlite"
     assert settings.database_path.exists()

@@ -6,7 +6,6 @@ import io
 import json
 import os
 import re
-import sqlite3
 import ssl
 import subprocess
 import uuid
@@ -36,15 +35,22 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    create_engine,
     delete,
     func,
-    inspect,
     select,
 )
+from sqlalchemy.dialects.mysql import DATETIME, DOUBLE, LONGBLOB, LONGTEXT
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 from .config import AppSettings, ConfigurationError, load_local_env
+from .database import (
+    create_database_engine,
+    create_session_factory,
+    current_alembic_revision,
+    verify_database_ready,
+)
+from .sqlite_legacy import ensure_database_schema
 
 IEEE_BLUE = "#00629B"
 IEEE_TEAL = "#00843D"
@@ -269,6 +275,24 @@ def app_path(env_name: str, default: str) -> Path:
     return configured
 
 
+PORTABLE_BINARY = (
+    LargeBinary().with_variant(LONGBLOB(), "mysql").with_variant(LONGBLOB(), "mariadb")
+)
+PORTABLE_DATETIME = (
+    DateTime()
+    .with_variant(DATETIME(fsp=6), "mysql")
+    .with_variant(DATETIME(fsp=6), "mariadb")
+)
+PORTABLE_FLOAT = (
+    Float()
+    .with_variant(DOUBLE(asdecimal=False), "mysql")
+    .with_variant(DOUBLE(asdecimal=False), "mariadb")
+)
+PORTABLE_TEXT = (
+    Text().with_variant(LONGTEXT(), "mysql").with_variant(LONGTEXT(), "mariadb")
+)
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -312,7 +336,7 @@ class Conference(Base):
     estimated_paper_submissions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     actual_paper_submissions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_reviewed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    comments: Mapped[str | None] = mapped_column(Text, nullable=True)
+    comments: Mapped[str | None] = mapped_column(PORTABLE_TEXT, nullable=True)
     project_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     project_indicator: Mapped[str | None] = mapped_column(String(80), nullable=True)
     financial_analyst: Mapped[str | None] = mapped_column(String(160), nullable=True)
@@ -326,26 +350,30 @@ class Conference(Base):
     mou_signed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     finance_status: Mapped[str] = mapped_column(String(80), default="Unknown")
     currency: Mapped[str | None] = mapped_column(String(12), nullable=True)
-    total_income_current: Mapped[float | None] = mapped_column(Float, nullable=True)
-    total_expense_current: Mapped[float | None] = mapped_column(Float, nullable=True)
-    budgeted_income_total: Mapped[float | None] = mapped_column(Float, nullable=True)
-    budgeted_expense_total: Mapped[float | None] = mapped_column(Float, nullable=True)
-    itss_loan_requested: Mapped[bool] = mapped_column(Boolean, default=False)
-    itss_loan_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_income_current: Mapped[float | None] = mapped_column(PORTABLE_FLOAT, nullable=True)
+    total_expense_current: Mapped[float | None] = mapped_column(PORTABLE_FLOAT, nullable=True)
+    budgeted_income_total: Mapped[float | None] = mapped_column(PORTABLE_FLOAT, nullable=True)
+    budgeted_expense_total: Mapped[float | None] = mapped_column(PORTABLE_FLOAT, nullable=True)
+    itss_loan_requested: Mapped[bool | None] = mapped_column(
+        Boolean, default=False, nullable=True, server_default="0"
+    )
+    itss_loan_amount: Mapped[float | None] = mapped_column(PORTABLE_FLOAT, nullable=True)
     accounting_close_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     publication_status: Mapped[str] = mapped_column(String(80), default="Unknown")
     proceedings_submitted_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     xplore_posting_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     last_source_update: Mapped[date | None] = mapped_column(Date, nullable=True)
-    source_details_json: Mapped[str] = mapped_column(Text, default="{}")
-    score: Mapped[float] = mapped_column(Float, default=0.0)
-    base_score: Mapped[float] = mapped_column(Float, default=0.0)
-    issue_penalty: Mapped[float] = mapped_column(Float, default=0.0)
-    data_completeness: Mapped[float] = mapped_column(Float, default=0.0)
+    source_details_json: Mapped[str | None] = mapped_column(
+        PORTABLE_TEXT, default="{}", nullable=True, server_default="{}"
+    )
+    score: Mapped[float] = mapped_column(PORTABLE_FLOAT, default=0.0)
+    base_score: Mapped[float] = mapped_column(PORTABLE_FLOAT, default=0.0)
+    issue_penalty: Mapped[float] = mapped_column(PORTABLE_FLOAT, default=0.0)
+    data_completeness: Mapped[float] = mapped_column(PORTABLE_FLOAT, default=0.0)
     status_band: Mapped[str] = mapped_column(String(80), default="Insufficient Data")
-    score_details_json: Mapped[str] = mapped_column(Text, default="{}")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: now(), onupdate=lambda: now())
+    score_details_json: Mapped[str] = mapped_column(PORTABLE_TEXT, default="{}")
+    created_at: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
+    updated_at: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now(), onupdate=lambda: now())
 
     contacts: Mapped[list["Contact"]] = relationship(cascade="all, delete-orphan")
     issues: Mapped[list["Issue"]] = relationship(cascade="all, delete-orphan")
@@ -384,11 +412,11 @@ class MilestoneDefinition(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     code: Mapped[str] = mapped_column(String(40), unique=True)
     name: Mapped[str] = mapped_column(String(240))
-    description: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(PORTABLE_TEXT, default="")
     score_dimension: Mapped[str] = mapped_column(String(120))
-    default_weight: Mapped[float] = mapped_column(Float, default=10)
-    applicable_sponsorship_types_json: Mapped[str] = mapped_column(Text, default="[]")
-    applicable_series_json: Mapped[str] = mapped_column(Text, default="[]")
+    default_weight: Mapped[float] = mapped_column(PORTABLE_FLOAT, default=10)
+    applicable_sponsorship_types_json: Mapped[str] = mapped_column(PORTABLE_TEXT, default="[]")
+    applicable_series_json: Mapped[str] = mapped_column(PORTABLE_TEXT, default="[]")
     required_lifecycle_phase: Mapped[str | None] = mapped_column(String(120), nullable=True)
     due_days_from_start: Mapped[int] = mapped_column(Integer, default=0)
     mandatory: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -406,9 +434,9 @@ class ConferenceMilestone(Base):
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     completed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     manual_override: Mapped[bool] = mapped_column(Boolean, default=False)
-    comments: Mapped[str | None] = mapped_column(Text, nullable=True)
+    comments: Mapped[str | None] = mapped_column(PORTABLE_TEXT, nullable=True)
     source: Mapped[str] = mapped_column(String(80), default="System")
-    last_updated: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
+    last_updated: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
     definition: Mapped[MilestoneDefinition] = relationship()
 
 
@@ -419,7 +447,7 @@ class Issue(Base):
     conference_id: Mapped[str] = mapped_column(ForeignKey("conferences.id"), index=True)
     issue_key: Mapped[str] = mapped_column(String(120), index=True)
     title: Mapped[str] = mapped_column(String(240))
-    description: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(PORTABLE_TEXT, default="")
     category: Mapped[str] = mapped_column(String(80), default="Data Quality")
     severity: Mapped[str] = mapped_column(String(40), default="Medium")
     issue_status: Mapped[str] = mapped_column(String(80), default="Open")
@@ -428,14 +456,14 @@ class Issue(Base):
     source_field: Mapped[str | None] = mapped_column(String(120), nullable=True)
     rule_identifier: Mapped[str | None] = mapped_column(String(120), nullable=True)
     owner: Mapped[str | None] = mapped_column(String(160), nullable=True)
-    date_detected: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
+    date_detected: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     last_reviewed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     resolution_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    user_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ai_recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
-    recommendation_generated_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    policy_references_json: Mapped[str] = mapped_column(Text, default="[]")
+    user_comment: Mapped[str | None] = mapped_column(PORTABLE_TEXT, nullable=True)
+    ai_recommendation: Mapped[str | None] = mapped_column(PORTABLE_TEXT, nullable=True)
+    recommendation_generated_date: Mapped[datetime | None] = mapped_column(PORTABLE_DATETIME, nullable=True)
+    policy_references_json: Mapped[str] = mapped_column(PORTABLE_TEXT, default="[]")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -444,9 +472,9 @@ class IssueComment(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     issue_id: Mapped[str] = mapped_column(ForeignKey("issues.id"), index=True)
-    comment: Mapped[str] = mapped_column(Text)
+    comment: Mapped[str] = mapped_column(PORTABLE_TEXT)
     author: Mapped[str] = mapped_column(String(160), default="local-user")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
+    created_at: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
 
 
 class ConferenceComment(Base):
@@ -454,10 +482,10 @@ class ConferenceComment(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     conference_id: Mapped[str] = mapped_column(ForeignKey("conferences.id"), index=True)
-    comment: Mapped[str] = mapped_column(Text)
+    comment: Mapped[str] = mapped_column(PORTABLE_TEXT)
     author: Mapped[str] = mapped_column(String(160), default="local-user")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: now(), onupdate=lambda: now())
+    created_at: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
+    updated_at: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now(), onupdate=lambda: now())
 
 
 class ImportBatch(Base):
@@ -468,16 +496,16 @@ class ImportBatch(Base):
     file_type: Mapped[str] = mapped_column(String(20))
     file_hash: Mapped[str] = mapped_column(String(64), index=True)
     report_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    upload_date: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
+    upload_date: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
     import_status: Mapped[str] = mapped_column(String(80), default="Validated")
     rows_count: Mapped[int] = mapped_column(Integer, default=0)
     new_count: Mapped[int] = mapped_column(Integer, default=0)
     changed_count: Mapped[int] = mapped_column(Integer, default=0)
     unchanged_count: Mapped[int] = mapped_column(Integer, default=0)
     conflict_count: Mapped[int] = mapped_column(Integer, default=0)
-    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    preview_json: Mapped[str] = mapped_column(Text, default="{}")
-    file_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    notes: Mapped[str | None] = mapped_column(PORTABLE_TEXT, nullable=True)
+    preview_json: Mapped[str] = mapped_column(PORTABLE_TEXT, default="{}")
+    file_data: Mapped[bytes | None] = mapped_column(PORTABLE_BINARY, nullable=True)
 
 
 class FieldChange(Base):
@@ -487,13 +515,13 @@ class FieldChange(Base):
     conference_id: Mapped[str] = mapped_column(ForeignKey("conferences.id"), index=True)
     entity: Mapped[str] = mapped_column(String(80), default="Conference")
     field_name: Mapped[str] = mapped_column(String(120))
-    old_value: Mapped[str | None] = mapped_column(Text, nullable=True)
-    new_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    old_value: Mapped[str | None] = mapped_column(PORTABLE_TEXT, nullable=True)
+    new_value: Mapped[str | None] = mapped_column(PORTABLE_TEXT, nullable=True)
     change_type: Mapped[str] = mapped_column(String(80), default="Manual")
     source: Mapped[str] = mapped_column(String(160), default="UI")
     import_batch_id: Mapped[str | None] = mapped_column(ForeignKey("import_batches.id"), nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
-    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
+    comment: Mapped[str | None] = mapped_column(PORTABLE_TEXT, nullable=True)
 
 
 class Snapshot(Base):
@@ -501,8 +529,8 @@ class Snapshot(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     conference_id: Mapped[str] = mapped_column(ForeignKey("conferences.id"), index=True)
-    snapshot_timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
-    payload_json: Mapped[str] = mapped_column(Text)
+    snapshot_timestamp: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
+    payload_json: Mapped[str] = mapped_column(PORTABLE_TEXT)
 
 
 class ScoreHistory(Base):
@@ -510,10 +538,10 @@ class ScoreHistory(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     conference_id: Mapped[str] = mapped_column(ForeignKey("conferences.id"), index=True)
-    score: Mapped[float] = mapped_column(Float)
-    data_completeness: Mapped[float] = mapped_column(Float)
-    dimension_scores_json: Mapped[str] = mapped_column(Text, default="{}")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
+    score: Mapped[float] = mapped_column(PORTABLE_FLOAT)
+    data_completeness: Mapped[float] = mapped_column(PORTABLE_FLOAT)
+    dimension_scores_json: Mapped[str] = mapped_column(PORTABLE_TEXT, default="{}")
+    created_at: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
 
 
 class Document(Base):
@@ -529,14 +557,14 @@ class Document(Base):
     version: Mapped[str | None] = mapped_column(String(80), nullable=True)
     effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    upload_date: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
+    upload_date: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     extraction_state: Mapped[str] = mapped_column(String(80), default="Extracted")
     indexing_state: Mapped[str] = mapped_column(String(80), default="Indexed")
     page_count: Mapped[int] = mapped_column(Integer, default=1)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
-    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
-    extracted_text: Mapped[str] = mapped_column(Text, default="")
+    metadata_json: Mapped[str] = mapped_column(PORTABLE_TEXT, default="{}")
+    extracted_text: Mapped[str] = mapped_column(PORTABLE_TEXT, default="")
 
 
 class TemplateFile(Base):
@@ -544,14 +572,14 @@ class TemplateFile(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     template_name: Mapped[str] = mapped_column(String(260))
-    short_description: Mapped[str] = mapped_column(Text, default="")
+    short_description: Mapped[str] = mapped_column(PORTABLE_TEXT, default="")
     category: Mapped[str] = mapped_column(String(120), index=True)
     template_type: Mapped[str] = mapped_column(String(80))
     file_name: Mapped[str] = mapped_column(String(260))
     original_filename: Mapped[str] = mapped_column(String(260))
-    file_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    upload_date: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: now(), onupdate=lambda: now())
+    file_data: Mapped[bytes | None] = mapped_column(PORTABLE_BINARY, nullable=True)
+    upload_date: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
+    updated_at: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now(), onupdate=lambda: now())
 
 
 class EmailDraft(Base):
@@ -559,16 +587,18 @@ class EmailDraft(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     conference_id: Mapped[str] = mapped_column(ForeignKey("conferences.id"), index=True)
-    related_issues_json: Mapped[str] = mapped_column(Text, default="[]")
-    recipient_names: Mapped[str] = mapped_column(Text, default="")
-    recipient_addresses: Mapped[str] = mapped_column(Text, default="")
-    cc_addresses: Mapped[str] = mapped_column(Text, default="")
+    related_issues_json: Mapped[str] = mapped_column(PORTABLE_TEXT, default="[]")
+    recipient_names: Mapped[str] = mapped_column(PORTABLE_TEXT, default="")
+    recipient_addresses: Mapped[str] = mapped_column(PORTABLE_TEXT, default="")
+    cc_addresses: Mapped[str] = mapped_column(PORTABLE_TEXT, default="")
     subject: Mapped[str] = mapped_column(String(260))
-    body: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(PORTABLE_TEXT)
     tone: Mapped[str] = mapped_column(String(80), default="Concise professional")
-    generator: Mapped[str] = mapped_column(String(80), default="Local composer")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: now(), onupdate=lambda: now())
+    generator: Mapped[str | None] = mapped_column(
+        String(80), default="Local composer", nullable=True, server_default="Local composer"
+    )
+    created_at: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
+    updated_at: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now(), onupdate=lambda: now())
     saved: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -588,19 +618,19 @@ class DashboardPin(Base):
     conference_id: Mapped[str] = mapped_column(ForeignKey("conferences.id"), unique=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0)
     pin_group: Mapped[str] = mapped_column(String(80), default="Default")
-    date_pinned: Mapped[datetime] = mapped_column(DateTime, default=lambda: now())
+    date_pinned: Mapped[datetime] = mapped_column(PORTABLE_DATETIME, default=lambda: now())
 
 
 class DashboardSettings(Base):
     __tablename__ = "dashboard_settings"
 
     key: Mapped[str] = mapped_column(String(120), primary_key=True)
-    value_json: Mapped[str] = mapped_column(Text)
+    value_json: Mapped[str] = mapped_column(PORTABLE_TEXT)
 
 
 @dataclass(frozen=True)
 class DashboardState:
-    engine: Any
+    engine: Engine
     session_factory: sessionmaker[Session]
     settings: AppSettings
 
@@ -611,11 +641,6 @@ _state: DashboardState | None = None
 def init_dashboard(settings: AppSettings | None = None) -> DashboardState:
     global _state
     settings = settings or AppSettings.from_env()
-    if settings.database_url is not None:
-        raise ConfigurationError(
-            "DATABASE_URL-backed startup is intentionally unavailable until Prompt 4 "
-            "implements database portability and Alembic migrations."
-        )
     for directory in [
         settings.document_path,
         settings.import_path,
@@ -624,56 +649,30 @@ def init_dashboard(settings: AppSettings | None = None) -> DashboardState:
         settings.template_path,
     ]:
         directory.mkdir(parents=True, exist_ok=True)
-    db_path = settings.database_path
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(f"sqlite:///{db_path.as_posix()}", future=True)
-    Base.metadata.create_all(engine)
-    ensure_database_schema(engine)
-    factory = sessionmaker(engine, expire_on_commit=False, future=True)
+    engine = create_database_engine(settings)
+    local_sqlite = not settings.is_deployed and engine.dialect.name == "sqlite"
+    legacy_sqlite_bootstrap = (
+        local_sqlite and current_alembic_revision(engine) is None
+    )
+    if legacy_sqlite_bootstrap:
+        Base.metadata.create_all(engine)
+        ensure_database_schema(engine)
+    else:
+        verify_database_ready(engine, require_revision=True)
+    factory = create_session_factory(engine)
     state = DashboardState(
         engine=engine,
         session_factory=factory,
         settings=settings,
     )
     _state = state
-    with factory() as session:
-        seed_configuration(session)
-        for conference in session.scalars(select(Conference)):
-            recalculate(conference, session, record_history=False)
-        session.commit()
+    if legacy_sqlite_bootstrap:
+        with factory() as session:
+            seed_configuration(session)
+            for conference in session.scalars(select(Conference)):
+                recalculate(conference, session, record_history=False)
+            session.commit()
     return state
-
-
-def ensure_database_schema(engine: Any) -> None:
-    inspector = inspect(engine)
-    table_names = inspector.get_table_names()
-    if "conferences" not in table_names:
-        return
-    columns = {column["name"] for column in inspector.get_columns("conferences")}
-    additions = {
-        "last_source_update": "DATE",
-        "source_details_json": "TEXT DEFAULT '{}'",
-        "itss_loan_requested": "BOOLEAN DEFAULT 0",
-        "itss_loan_amount": "FLOAT",
-        "estimated_paper_submissions": "INTEGER",
-        "actual_paper_submissions": "INTEGER",
-    }
-    with engine.begin() as connection:
-        for name, ddl_type in additions.items():
-            if name not in columns:
-                connection.exec_driver_sql(f"ALTER TABLE conferences ADD COLUMN {name} {ddl_type}")
-        if "email_drafts" in table_names:
-            email_columns = {column["name"] for column in inspector.get_columns("email_drafts")}
-            if "generator" not in email_columns:
-                connection.exec_driver_sql("ALTER TABLE email_drafts ADD COLUMN generator VARCHAR(80) DEFAULT 'Local composer'")
-        if "template_files" in table_names:
-            template_columns = {column["name"] for column in inspector.get_columns("template_files")}
-            if "file_data" not in template_columns:
-                connection.exec_driver_sql("ALTER TABLE template_files ADD COLUMN file_data BLOB")
-        if "import_batches" in table_names:
-            import_columns = {column["name"] for column in inspector.get_columns("import_batches")}
-            if "file_data" not in import_columns:
-                connection.exec_driver_sql("ALTER TABLE import_batches ADD COLUMN file_data BLOB")
 
 
 def get_state() -> DashboardState:
@@ -2762,6 +2761,7 @@ def resolve_issue(issue_id: str, session: Session = Depends(get_session)) -> dic
 def delete_issue(issue_id: str, session: Session = Depends(get_session)) -> dict[str, str]:
     issue = require_issue(session, issue_id)
     conference = require_conference(session, issue.conference_id)
+    session.execute(delete(IssueComment).where(IssueComment.issue_id == issue.id))
     session.delete(issue)
     recalculate(conference, session)
     session.commit()
@@ -5138,10 +5138,3 @@ def current_surplus(conference: Conference) -> float | None:
     if conference.total_income_current is None or conference.total_expense_current is None:
         return None
     return conference.total_income_current - conference.total_expense_current
-
-
-def sqlite_health() -> dict[str, Any]:
-    db_path = get_state().settings.database_path
-    with sqlite3.connect(db_path) as connection:
-        row = connection.execute("select count(*) from conferences").fetchone()
-    return {"database": str(db_path), "conference_count": row[0]}

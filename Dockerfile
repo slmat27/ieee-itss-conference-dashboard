@@ -46,6 +46,8 @@ WORKDIR /app
 ENV PATH="/app/.venv/bin:${PATH}"
 
 COPY --from=python-deps /app/.venv /app/.venv
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
 COPY app ./app
 COPY --from=frontend-builder /frontend/dist ./static
 

@@ -20,6 +20,8 @@ dependencies = [
     "python-multipart",
     "sqlalchemy>=2",
     "uvicorn[standard]",
+    "alembic>=1.19.2",
+    "pymysql>=1.2.0",
 ]
 
 [dependency-groups]
