@@ -17,7 +17,9 @@ Local-first web application for the IEEE Intelligent Transportation Systems Soci
 | `.github/` | contributor tooling | Pull-request and release-note metadata. |
 | `.gitignore` | maintenance | Excludes secrets, runtime data, caches, generated files, and personal wrappers. |
 | `CHANGELOG.md` | maintenance | Keep-a-Changelog release history. |
+| `LICENSE` | maintenance | MIT terms for original software and documentation. |
 | `Dockerfile` | build | Container image build definition. |
+| `NOTICE.md` | maintenance | IEEE and IEEE ITSS ownership and trademark notice. |
 | `README.md` | contributor tooling | Application, setup, migration, and validation guide. |
 | `RELEASING.md` | maintenance | Semantic-versioning and release procedure. |
 | `alembic.ini` | database migration | Alembic command configuration. |
@@ -30,7 +32,8 @@ Local-first web application for the IEEE Intelligent Transportation Systems Soci
 | `uv.lock` | build | Reproducible Python dependency lock. |
 
 Private data, databases, uploads, generated reports, deployment notes, and
-machine-specific wrappers are intentionally not part of the tracked layout.
+machine-specific wrappers are intentionally not part of the tracked layout. The
+entire `.local/` directory is private and ignored.
 
 ## Requirements
 
@@ -111,6 +114,11 @@ AZURE_OPENAI_EMBEDDING_DEPLOYMENT=
 ```
 
 The Settings page masks the API key and can verify the configured chat deployment.
+
+For a TEI-compatible embedding service, use `TEI_EMBEDDING_BASE_URL` (preferred)
+or the neutral compatibility alias `EMBEDDING_BASE_URL`. The former
+organization-specific endpoint alias is no longer accepted. Configuration
+examples contain placeholders only.
 
 ## Data storage
 
@@ -242,6 +250,11 @@ current development milestone is `0.1.0`; see `CHANGELOG.md` and
 `RELEASING.md` for the release process. No tag or GitHub Release is created
 until the release is approved and merged to `main`.
 
-## License
+## License and trademarks
 
-No software license was present in the source project, so none has been added. The repository owner should choose and add an appropriate license before inviting external reuse or contributions.
+Original software code and documentation are licensed under the MIT License:
+Copyright (c) 2026 Ahmed Hussein. See `LICENSE`.
+
+IEEE, IEEE ITSS, and their names, logos, and trademarks remain the property of
+their respective owners and are not licensed under MIT. Their inclusion does
+not imply endorsement. See `NOTICE.md`.
