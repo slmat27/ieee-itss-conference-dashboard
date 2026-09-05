@@ -26,5 +26,4 @@ migration-reports/
 *.migration-report.txt
 *.pre-alembic-*.bak
 
-.local/*
-!.local/README.example.md
+.local/
