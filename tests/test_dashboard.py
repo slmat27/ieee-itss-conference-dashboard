@@ -605,6 +605,11 @@ def test_import_applies_selected_valid_fields_when_other_fields_have_errors(tmp_
         conferences = client.get("/api/conferences", params={"q": "98765"}).json()["items"]
         assert conferences[0]["application_status"] == "Approved"
         assert conferences[0]["mou_status"] == "Approved"
+        milestones = {item["code"]: item for item in conferences[0]["milestones"]}
+        assert milestones["APPLICATION"]["status"] == "Approved"
+        assert milestones["APPLICATION"]["manual_override"] is True
+        assert milestones["MOU"]["status"] == "Approved"
+        assert milestones["MOU"]["manual_override"] is True
         assert conferences[0]["start_date"] is None
         assert conferences[0]["end_date"] is None
 

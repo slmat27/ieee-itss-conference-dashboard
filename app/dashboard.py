@@ -4023,6 +4023,7 @@ IMPORT_FIELD_MAP = {
 }
 
 STATUS_IMPORT_FIELDS = {"application_status", "mou_status", "finance_status", "publication_status", "conference_status"}
+IMPORT_MILESTONE_STATUS_CODES = {"application_status": "APPLICATION", "mou_status": "MOU"}
 DATE_IMPORT_FIELDS = {
     "start_date",
     "end_date",
@@ -4145,6 +4146,7 @@ def apply_import_row(row: dict[str, Any], session: Session, batch: ImportBatch, 
         )
         session.add(conference)
         session.flush()
+    imported_milestone_statuses: dict[str, str] = {}
     for field, column in IMPORT_FIELD_MAP.items():
         if field not in fields_to_apply:
             continue
@@ -4154,7 +4156,22 @@ def apply_import_row(row: dict[str, Any], session: Session, batch: ImportBatch, 
         old = getattr(conference, field)
         if comparable_import_value(old) != comparable_import_value(value):
             setattr(conference, field, value)
+            milestone_code = IMPORT_MILESTONE_STATUS_CODES.get(field)
+            if milestone_code and isinstance(value, str):
+                imported_milestone_statuses[milestone_code] = value
             session.add(FieldChange(conference_id=conference.id, field_name=field, old_value=str(old) if old else None, new_value=str(value) if value else None, change_type="Import", source=batch.original_filename, import_batch_id=batch.id))
+    if imported_milestone_statuses:
+        ensure_milestones(conference, session)
+        session.flush()
+        session.expire(conference, ["milestones"])
+        for milestone in conference.milestones:
+            imported_status = imported_milestone_statuses.get(milestone.definition.code)
+            if imported_status is None:
+                continue
+            milestone.status = imported_status
+            milestone.manual_override = True
+            milestone.source = "Import"
+            milestone.last_updated = now()
     return conference
 
 

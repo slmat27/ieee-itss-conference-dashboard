@@ -4,7 +4,7 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "tsBuildInfoFile": "../../../tsbuild/ieee-itss-tsconfig.app.tsbuildinfo",
+    "tsBuildInfoFile": "./tsconfig.app.tsbuildinfo",
     "target": "ES2022",
     "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
