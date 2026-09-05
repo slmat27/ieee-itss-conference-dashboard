@@ -4441,7 +4441,7 @@ def write_vector_chunks(document_id: str, chunks: list[str], *, require_embeddin
                 "chunk_index": i,
                 "character_count": len(chunk),
                 "embedding_model": embedding_model(),
-                "embedding_provider": "IAV on-prem TEI",
+                "embedding_provider": "TEI-compatible embedding service",
                 "created_at": now().isoformat(),
             },
         }
@@ -4454,7 +4454,7 @@ def write_vector_chunks(document_id: str, chunks: list[str], *, require_embeddin
         "chunk_count": len(chunks),
         "dimension": dimension,
         "model": embedding_model(),
-        "provider": "IAV on-prem TEI",
+        "provider": "TEI-compatible embedding service",
         "vector_path": str(path),
         "error": error,
     }
@@ -4464,7 +4464,6 @@ def embedding_base_url() -> str:
     load_local_env()
     return (
         os.environ.get("TEI_EMBEDDING_BASE_URL")
-        or os.environ.get("IAV_TEI_EMBEDDING_BASE_URL")
         or os.environ.get("EMBEDDING_BASE_URL")
         or ""
     ).strip()
@@ -4493,7 +4492,7 @@ def embedding_status(*, mask: bool) -> dict[str, Any]:
     base = embedding_base_url()
     return {
         "configured": bool(base),
-        "provider": "IAV on-prem TEI",
+        "provider": "TEI-compatible embedding service",
         "endpoint": mask_endpoint(base) if mask else base,
         "route": "/v1/embeddings",
         "model": embedding_model(),
@@ -4628,7 +4627,7 @@ def vector_summary(document_id: str) -> dict[str, Any]:
         "embedded_count": len(embedded),
         "dimension": len(first_embedding) if isinstance(first_embedding, list) else 0,
         "model": embedding_model(),
-        "provider": "IAV on-prem TEI",
+        "provider": "TEI-compatible embedding service",
         "updated_at": datetime.fromtimestamp(path.stat().st_mtime).isoformat() if path.exists() else None,
     }
 

@@ -29,24 +29,24 @@ const STATUS_COLORS: Record<string, string> = {
   "at risk": "#ff7a45",
   critical: "#ff4d4f",
   blocked: "#ff4d4f",
-  "not started": "#696969",
-  "in progress": "#0091ff",
+  "not started": "#5B6770",
+  "in progress": "#00629B",
   complete: "#28a000",
-  closed: "#696969",
-  cancelled: "#696969",
+  closed: "#5B6770",
+  cancelled: "#5B6770",
   active: "#28a000",
-  planning: "#0091ff",
-  completed: "#696969",
+  planning: "#00629B",
+  completed: "#5B6770",
   pending: "#ff9000",
   risk: "#ff4d4f",
-  proposed: "#5500b4",
-  inactive: "#c8c6c6",
+  proposed: "#5E5A9C",
+  inactive: "#D9DEE7",
 };
 
 const SPONSORSHIP_COLORS: Record<string, string> = {
-  "financially sponsored": "#0091ff",
+  "financially sponsored": "#00629B",
   "financially co-sponsored": "#28a000",
-  "technically co-sponsored": "#dc46f3",
+  "technically co-sponsored": "#7E79B5",
 };
 
 const CARD_WINDOW_SIZE = 4;
@@ -59,11 +59,11 @@ const FLAGSHIP_SERIES = [
 type ChartDatum = { name: string; value: number };
 
 function statusColor(value?: string | null) {
-  return STATUS_COLORS[String(value ?? "").toLowerCase()] ?? "#0091ff";
+  return STATUS_COLORS[String(value ?? "").toLowerCase()] ?? "#00629B";
 }
 
 function sponsorshipColor(value?: string | null) {
-  return SPONSORSHIP_COLORS[String(value ?? "").toLowerCase()] ?? "#696969";
+  return SPONSORSHIP_COLORS[String(value ?? "").toLowerCase()] ?? "#5B6770";
 }
 
 function chartTotal(data: ChartDatum[]) {
@@ -511,9 +511,9 @@ export default function Overview() {
                       <Tooltip
                         formatter={(value, name) => [`${value} conferences`, humanizeLabel(String(name))]}
                         contentStyle={{
-                          border: "1px solid rgba(0, 26, 84, 0.12)",
+                          border: "1px solid rgba(18, 59, 93, 0.12)",
                           borderRadius: 8,
-                          boxShadow: "0 10px 24px rgba(0, 26, 84, 0.12)",
+                          boxShadow: "0 10px 24px rgba(18, 59, 93, 0.12)",
                         }}
                       />
                     </PieChart>
@@ -562,9 +562,9 @@ export default function Overview() {
                       <Tooltip
                         formatter={(value, name) => [`${value} conferences`, humanizeLabel(String(name))]}
                         contentStyle={{
-                          border: "1px solid rgba(0, 26, 84, 0.12)",
+                          border: "1px solid rgba(18, 59, 93, 0.12)",
                           borderRadius: 8,
-                          boxShadow: "0 10px 24px rgba(0, 26, 84, 0.12)",
+                          boxShadow: "0 10px 24px rgba(18, 59, 93, 0.12)",
                         }}
                       />
                     </PieChart>

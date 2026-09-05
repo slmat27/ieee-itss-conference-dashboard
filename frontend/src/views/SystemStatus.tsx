@@ -187,7 +187,7 @@ export default function SystemStatus() {
                 value={embeddingConfig.configured ? "Configured" : "Missing"}
                 valueStyle={{ color: embeddingConfig.configured ? "#28a000" : "#faad14" }}
               />
-              <Typography.Text type="secondary">{embeddingConfig.provider || "IAV on-prem TEI"}</Typography.Text>
+              <Typography.Text type="secondary">{embeddingConfig.provider || "TEI-compatible embedding service"}</Typography.Text>
             </div>
           </Card>
         </Col>
@@ -250,7 +250,7 @@ export default function SystemStatus() {
         <Col xs={24} lg={12}>
           <Card title={<><CloudServerOutlined /> Embedding Service</>}>
             <Descriptions size="small" column={1} bordered>
-              <Descriptions.Item label="Provider">{embeddingConfig.provider || "IAV on-prem TEI"}</Descriptions.Item>
+              <Descriptions.Item label="Provider">{embeddingConfig.provider || "TEI-compatible embedding service"}</Descriptions.Item>
               <Descriptions.Item label="Endpoint">{embeddingConfig.endpoint || "-"}</Descriptions.Item>
               <Descriptions.Item label="Route">{embeddingConfig.route || "/v1/embeddings"}</Descriptions.Item>
               <Descriptions.Item label="Model">{embeddingConfig.model || "-"}</Descriptions.Item>

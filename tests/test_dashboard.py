@@ -37,6 +37,21 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     return TestClient(app)
 
 
+def test_embedding_configuration_uses_neutral_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TEI_EMBEDDING_BASE_URL", "")
+    monkeypatch.setenv("TEI_EMBEDDING_MODEL", "")
+    monkeypatch.setenv("EMBEDDING_BASE_URL", "https://embeddings.example")
+    monkeypatch.setenv("EMBEDDING_MODEL", "neutral-test-model")
+
+    assert dashboard.embedding_base_url() == "https://embeddings.example"
+    assert dashboard.embedding_model() == "neutral-test-model"
+    assert dashboard.embedding_status(mask=False)["provider"] == (
+        "TEI-compatible embedding service"
+    )
+
+
 def test_first_run_creates_database_and_reference_data(tmp_path: Path, monkeypatch) -> None:
     with _client(tmp_path, monkeypatch) as client:
         response = client.get("/api/reference-data")
