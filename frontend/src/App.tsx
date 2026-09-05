@@ -11,7 +11,7 @@ import {
   UnorderedListOutlined,
 } from "@ant-design/icons";
 import { Input, Layout, Menu, Select, message } from "antd";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   BrowserRouter,
   Link,
@@ -25,7 +25,9 @@ import {
 import ieeeLogo from "@/assets/ieee.png";
 import itssLogo from "@/assets/itss.png";
 import { Page } from "@/components/ui";
-import { AccessProvider, useAccess, type AccessContextValue } from "@/hooks/useAccess";
+import { AccessProvider } from "@/components/providers/AccessProvider";
+import type { AccessContextValue } from "@/contexts/access";
+import { useAccess } from "@/hooks/useAccess";
 import { api } from "@/lib/api";
 import type { AppSettings } from "@/types/conference";
 
@@ -154,9 +156,15 @@ function AppLayout() {
     settings?.role_permissions?.[selectedRole] ??
     DEFAULT_PERMISSIONS[selectedRole] ??
     DEFAULT_PERMISSIONS.administrator;
-  const featureFlags = settings?.feature_flags ?? {};
-  const hasPermission = (permission: string) => permissions?.[permission] !== false;
-  const isEnabled = (module: string) => featureFlags?.[module] !== false;
+  const featureFlags = useMemo(() => settings?.feature_flags ?? {}, [settings?.feature_flags]);
+  const hasPermission = useCallback(
+    (permission: string) => permissions?.[permission] !== false,
+    [permissions],
+  );
+  const isEnabled = useCallback(
+    (module: string) => featureFlags?.[module] !== false,
+    [featureFlags],
+  );
 
   const visibleNavItems = useMemo(
     () =>
@@ -167,7 +175,7 @@ function AppLayout() {
           icon: item.icon,
           label: <Link to={item.key}>{item.label}</Link>,
         })),
-    [featureFlags, permissions],
+    [hasPermission, isEnabled],
   );
 
   const firstAllowedPath = visibleNavItems[0]?.key ?? "/status";
@@ -229,7 +237,7 @@ function AppLayout() {
                   selectedItem &&
                   nextPermissions?.[selectedItem.permission] === false
                 ) {
-                  navigate(nextItem.key);
+                  void navigate(nextItem.key);
                 }
               }}
             />
@@ -245,7 +253,7 @@ function AppLayout() {
                 onPressEnter={(event) => {
                   const value = event.currentTarget.value.trim();
                   if (value) {
-                    navigate(`/conferences?search=${encodeURIComponent(value)}`);
+                    void navigate(`/conferences?search=${encodeURIComponent(value)}`);
                   }
                 }}
                 allowClear

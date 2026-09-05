@@ -30,7 +30,7 @@ import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
-import type { AppSettings } from "@/types/conference";
+import type { AppSettings, ConferenceSeriesConfig, ReferenceConfig } from "@/types/conference";
 
 const featureLabels: Record<string, string> = {
   overview: "Overview",
@@ -110,7 +110,38 @@ const formulaVariables = [
 
 type PermissionRow = { key: string; label: string; description: string };
 type MappingRow = { source: string; normalized: string };
-type ConferenceSeriesItem = { code: string; name: string; flagship: boolean };
+interface RefreshFactsResponse {
+  status: string;
+  synced: number;
+}
+
+interface RecalculateScoresResponse {
+  updated: number;
+  message: string;
+}
+
+type StringReferenceKey = Exclude<keyof ReferenceConfig, "conference_series">;
+
+const STRING_REFERENCE_KEYS: StringReferenceKey[] = [
+  "committee_members",
+  "lifecycle_phases",
+  "conference_statuses",
+  "normalized_statuses",
+  "sponsorship_types",
+  "contact_roles",
+  "issue_categories",
+  "issue_severities",
+  "review_assessments",
+];
+
+function isNumberRecord(value: unknown): value is Record<string, number> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((item) => typeof item === "number")
+  );
+}
 
 export default function Settings() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -150,7 +181,7 @@ export default function Settings() {
 
   const saveReferenceConfig = async () => {
     if (!settings?.reference_config) return;
-    const series = (settings.reference_config.conference_series ?? []) as ConferenceSeriesItem[];
+    const series = (settings.reference_config.conference_series ?? []);
     const codes = series.map((item) => item.code.trim().toUpperCase());
     if (series.some((item) => !item.code.trim() || !item.name.trim())) {
       message.error("Every conference series needs a code and display name");
@@ -178,7 +209,7 @@ export default function Settings() {
   };
 
   const refreshFacts = async () => {
-    const result = await api<Record<string, any>>("/settings/refresh-conference-facts", { method: "POST" });
+    const result = await api<RefreshFactsResponse>("/settings/refresh-conference-facts", { method: "POST" });
     message.success(`${result.synced ?? 0} conferences refreshed`);
   };
 
@@ -210,7 +241,7 @@ export default function Settings() {
         body: JSON.stringify({ score_settings: settings?.score_settings }),
       });
       setSettings(updated);
-      const result = await api<Record<string, any>>("/settings/recalculate-scores", { method: "POST" });
+      const result = await api<RecalculateScoresResponse>("/settings/recalculate-scores", { method: "POST" });
       message.success(result.message || `${result.updated ?? 0} conference scores recalculated`);
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Failed to recalculate scores");
@@ -233,12 +264,13 @@ export default function Settings() {
 
   const updateNestedScoreSetting = (group: string, key: string, value: number) => {
     if (!settings) return;
+    const currentGroup = settings.score_settings[group];
     setSettings({
       ...settings,
       score_settings: {
         ...settings.score_settings,
         [group]: {
-          ...(settings.score_settings[group] ?? {}),
+          ...(isNumberRecord(currentGroup) ? currentGroup : {}),
           [key]: value,
         },
       },
@@ -283,11 +315,11 @@ export default function Settings() {
 
   const updateConferenceSeries = (
     index: number,
-    field: keyof ConferenceSeriesItem,
+    field: keyof ConferenceSeriesConfig,
     value: string | boolean,
   ) => {
     if (!settings) return;
-    const current = [...((settings.reference_config?.conference_series ?? []) as ConferenceSeriesItem[])];
+    const current = [...((settings.reference_config?.conference_series ?? []))];
     current[index] = {
       ...current[index],
       [field]: field === "code" ? String(value).toUpperCase() : value,
@@ -303,7 +335,7 @@ export default function Settings() {
 
   const addConferenceSeries = () => {
     if (!settings) return;
-    const current = [...((settings.reference_config?.conference_series ?? []) as ConferenceSeriesItem[])];
+    const current = [...((settings.reference_config?.conference_series ?? []))];
     current.push({ code: "", name: "", flagship: false });
     setSettings({
       ...settings,
@@ -316,7 +348,7 @@ export default function Settings() {
 
   const removeConferenceSeries = (index: number) => {
     if (!settings) return;
-    const current = [...((settings.reference_config?.conference_series ?? []) as ConferenceSeriesItem[])];
+    const current = [...((settings.reference_config?.conference_series ?? []))];
     current.splice(index, 1);
     setSettings({
       ...settings,
@@ -397,6 +429,9 @@ export default function Settings() {
   );
   const milestoneOffsets = Object.entries(settings.milestone_date_defaults ?? {}).sort(([left], [right]) => left.localeCompare(right));
   const milestoneStatusScores = settings.score_settings?.milestone_status_scores ?? {};
+  const referenceConfigEntries = STRING_REFERENCE_KEYS.map(
+    (key) => [key, settings.reference_config?.[key] ?? []] as const,
+  );
 
   return (
     <div className="settings-page">
@@ -414,8 +449,8 @@ export default function Settings() {
             type="primary"
             icon={<SaveOutlined />}
             loading={saving}
-            onClick={() =>
-              saveSettings({
+            onClick={() => {
+              void saveSettings({
                 portfolio_start_year: settings.portfolio_start_year,
                 kpi_from_year: settings.kpi_from_year,
                 kpi_to_year: settings.kpi_to_year,
@@ -424,8 +459,8 @@ export default function Settings() {
                 feature_flags: settings.feature_flags,
                 role_permissions: settings.role_permissions,
                 assistant_system_prompt: settings.assistant_system_prompt,
-              })
-            }
+              });
+            }}
           >
             Save Settings
           </Button>
@@ -440,14 +475,14 @@ export default function Settings() {
               title={<><ThunderboltOutlined /> Conference Score Management</>}
               extra={
                 <Space wrap>
-                  <Button icon={<ReloadOutlined />} loading={recalculating} onClick={recalculateScores}>
+                  <Button icon={<ReloadOutlined />} loading={recalculating} onClick={() => { void recalculateScores(); }}>
                     Recalculate Scores
                   </Button>
                   <Button
                     type="primary"
                     icon={<SaveOutlined />}
                     loading={saving}
-                    onClick={() => saveSettings({ score_settings: settings.score_settings })}
+                    onClick={() => { void saveSettings({ score_settings: settings.score_settings }); }}
                   >
                     Save Scoring
                   </Button>
@@ -532,7 +567,7 @@ export default function Settings() {
               className="settings-panel"
               title={<><FieldTimeOutlined /> Milestones</>}
               extra={
-                <Button icon={<ReloadOutlined />} loading={recalculating} onClick={recalculateMilestones}>
+                <Button icon={<ReloadOutlined />} loading={recalculating} onClick={() => { void recalculateMilestones(); }}>
                   Save & Recalculate Milestones
                 </Button>
               }
@@ -699,12 +734,12 @@ export default function Settings() {
                   type="primary"
                   icon={<SaveOutlined />}
                   loading={saving}
-                  onClick={() =>
-                    saveSettings({
+                  onClick={() => {
+                    void saveSettings({
                       kpi_from_year: settings.kpi_from_year,
                       kpi_to_year: settings.kpi_to_year,
-                    })
-                  }
+                    });
+                  }}
                 >
                   Save KPI Period
                 </Button>
@@ -722,8 +757,8 @@ export default function Settings() {
                 />
               </div>
               <Space wrap style={{ marginTop: 14 }}>
-                <Button icon={<ReloadOutlined />} onClick={refreshFacts}>Refresh Conference Facts</Button>
-                <Button icon={<ReloadOutlined />} onClick={recalculateMilestones}>Recalculate Milestone Dates</Button>
+                <Button icon={<ReloadOutlined />} onClick={() => { void refreshFacts(); }}>Refresh Conference Facts</Button>
+                <Button icon={<ReloadOutlined />} onClick={() => { void recalculateMilestones(); }}>Recalculate Milestone Dates</Button>
               </Space>
             </Card>
 
@@ -773,7 +808,7 @@ export default function Settings() {
       <Card
         title={<><EditOutlined /> Reference Configuration</>}
         className="section-gap settings-panel"
-        extra={<Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={saveReferenceConfig}>Save Reference Lists</Button>}
+        extra={<Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => { void saveReferenceConfig(); }}>Save Reference Lists</Button>}
       >
         <Alert
           showIcon
@@ -800,7 +835,7 @@ export default function Settings() {
             <span>Action</span>
           </div>
           <div className="conference-series-rows">
-            {((settings.reference_config?.conference_series ?? []) as ConferenceSeriesItem[]).map((item, index) => (
+            {((settings.reference_config?.conference_series ?? [])).map((item, index) => (
               <div className="conference-series-row" key={`conference-series-${index}`}>
                 <Input
                   aria-label="Conference series code"
@@ -834,7 +869,7 @@ export default function Settings() {
           </div>
         </div>
         <div className="reference-config-grid">
-          {Object.entries(settings.reference_config ?? {}).filter(([key]) => key !== "conference_series").map(([key, values]) => (
+          {referenceConfigEntries.map(([key, values]) => (
             <div className="reference-config-card" key={key}>
               <div className="reference-config-head">
                 <strong>{settings.reference_config_labels?.[key] ?? key}</strong>
@@ -843,11 +878,7 @@ export default function Settings() {
               <Select
                 className="reference-editor-select"
                 mode="tags"
-                value={values.map((item) => {
-                  if (typeof item === "string") return item;
-                  if (item && typeof item === "object" && "name" in item) return String(item.name);
-                  return JSON.stringify(item);
-                })}
+                value={values}
                 tokenSeparators={[","]}
                 onChange={(nextValues) =>
                   setSettings({

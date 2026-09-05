@@ -2,7 +2,7 @@
 
 const API_BASE = "/api";
 
-export async function api<T = any>(
+export async function api<T = unknown>(
   endpoint: string,
   options?: RequestInit,
 ): Promise<T> {
@@ -20,8 +20,14 @@ export async function api<T = any>(
     let detail = `Request failed with status ${response.status}.`;
     const text = await response.text();
     try {
-      const payload = JSON.parse(text);
-      if (typeof payload.detail === "string" && payload.detail.trim()) {
+      const payload: unknown = JSON.parse(text);
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        "detail" in payload &&
+        typeof payload.detail === "string" &&
+        payload.detail.trim()
+      ) {
         detail = payload.detail;
       }
     } catch {

@@ -12,7 +12,7 @@ import { Alert, Button, Card, Col, Descriptions, Input, Row, Space, Statistic, T
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
-import type { AppSettings, ConferenceSummary } from "@/types/conference";
+import type { AppSettings, ConferenceSummary, ServiceVerification } from "@/types/conference";
 
 interface HealthStatus {
   status?: string;
@@ -30,17 +30,17 @@ export default function SystemStatus() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [llmStatus, setLlmStatus] = useState<Record<string, any> | null>(null);
-  const [embeddingStatus, setEmbeddingStatus] = useState<Record<string, any> | null>(null);
+  const [llmStatus, setLlmStatus] = useState<ServiceVerification | null>(null);
+  const [embeddingStatus, setEmbeddingStatus] = useState<ServiceVerification | null>(null);
   const [llmTest, setLlmTest] = useState("Reply with one short sentence confirming the IEEE ITSS dashboard LLM connection works.");
-  const [llmTestResult, setLlmTestResult] = useState<Record<string, any> | null>(null);
+  const [llmTestResult, setLlmTestResult] = useState<ServiceVerification | null>(null);
   const [checkingLlm, setCheckingLlm] = useState(false);
   const [checkingEmbeddings, setCheckingEmbeddings] = useState(false);
 
   const loadStatus = () => {
     setLoading(true);
     Promise.all([
-      fetch("/healthz").then((response) => response.json()),
+      fetch("/healthz").then((response) => response.json() as Promise<HealthStatus>),
       api<ConferenceSummary>("/dashboard/summary"),
       api<AppSettings>("/settings"),
     ])
@@ -63,7 +63,7 @@ export default function SystemStatus() {
   const verifyLLM = async () => {
     setCheckingLlm(true);
     try {
-      const status = await api<Record<string, any>>("/settings/verify-azure-openai", { method: "POST" });
+      const status = await api<ServiceVerification>("/settings/verify-azure-openai", { method: "POST" });
       setLlmStatus(status);
       message[status.ok ? "success" : "warning"](status.message || "LLM verification complete");
     } catch (err) {
@@ -76,7 +76,7 @@ export default function SystemStatus() {
   const verifyEmbeddings = async () => {
     setCheckingEmbeddings(true);
     try {
-      const status = await api<Record<string, any>>("/settings/verify-embeddings", { method: "POST" });
+      const status = await api<ServiceVerification>("/settings/verify-embeddings", { method: "POST" });
       setEmbeddingStatus(status);
       message[status.ok ? "success" : "warning"](status.message || "Embedding verification complete");
     } catch (err) {
@@ -89,7 +89,7 @@ export default function SystemStatus() {
   const testLLM = async () => {
     setCheckingLlm(true);
     try {
-      const result = await api<Record<string, any>>("/settings/test-llm-message", {
+      const result = await api<ServiceVerification>("/settings/test-llm-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: llmTest }),
@@ -228,7 +228,7 @@ export default function SystemStatus() {
               <Descriptions.Item label="Chat deployment/model">{llmConfig.chat_deployment || llmConfig.deployment || "-"}</Descriptions.Item>
             </Descriptions>
             <Space wrap style={{ marginTop: 14 }}>
-              <Button icon={<CheckCircleOutlined />} onClick={verifyLLM} loading={checkingLlm}>Verify Connection</Button>
+              <Button icon={<CheckCircleOutlined />} onClick={() => { void verifyLLM(); }} loading={checkingLlm}>Verify Connection</Button>
             </Space>
             {llmStatus && (
               <Alert
@@ -242,7 +242,7 @@ export default function SystemStatus() {
             <div className="llm-test-box" style={{ marginTop: 14 }}>
               <strong>One-shot LLM test</strong>
               <Input.TextArea rows={3} value={llmTest} onChange={(event) => setLlmTest(event.target.value)} />
-              <Button onClick={testLLM} loading={checkingLlm}>Send Test Message</Button>
+              <Button onClick={() => { void testLLM(); }} loading={checkingLlm}>Send Test Message</Button>
               {llmTestResult && <span className="llm-response">{llmTestResult.response || llmTestResult.message}</span>}
             </div>
           </Card>
@@ -257,7 +257,7 @@ export default function SystemStatus() {
               <Descriptions.Item label="API key required">{embeddingConfig.api_key_required ? "Yes" : "No"}</Descriptions.Item>
             </Descriptions>
             <Space wrap style={{ marginTop: 14 }}>
-              <Button icon={<CheckCircleOutlined />} onClick={verifyEmbeddings} loading={checkingEmbeddings}>Verify Embeddings</Button>
+              <Button icon={<CheckCircleOutlined />} onClick={() => { void verifyEmbeddings(); }} loading={checkingEmbeddings}>Verify Embeddings</Button>
             </Space>
             {embeddingStatus && (
               <Alert

@@ -1,5 +1,68 @@
 // Conference domain types for IEEE ITSS Conference Dashboard
 
+export interface ServiceConfiguration {
+  configured?: boolean;
+  provider?: string;
+  endpoint?: string;
+  route?: string;
+  model?: string;
+  deployment?: string;
+  chat_deployment?: string;
+  api_key_present?: boolean;
+  api_key_required?: boolean;
+}
+
+export interface ServiceVerification extends ServiceConfiguration {
+  ok: boolean;
+  message: string;
+  checked_at?: string;
+  response?: string;
+  sample?: string;
+  dimension?: number;
+  missing?: string[];
+  error_type?: string;
+  error_cause?: string;
+  model_info?: Record<string, unknown>;
+}
+
+export interface ConferenceSeriesConfig {
+  code: string;
+  name: string;
+  flagship: boolean;
+}
+
+export interface MilestoneDateOffset {
+  anchor: string;
+  months: number;
+  days: number;
+  warning_days?: number;
+}
+
+export interface ScoreSettings {
+  dimension_weights?: Record<string, number>;
+  milestone_status_scores?: Record<string, number>;
+  issue_severity_penalties?: Record<string, number>;
+  issue_assessment_factors?: Record<string, number>;
+  issue_penalty_cap?: number;
+  lateness_step_days?: number;
+  lateness_cap_factor?: number;
+  score_formula?: string;
+  [key: string]: string | number | Record<string, number> | undefined;
+}
+
+export interface ReferenceConfig {
+  committee_members?: string[];
+  conference_series?: ConferenceSeriesConfig[];
+  lifecycle_phases?: string[];
+  conference_statuses?: string[];
+  normalized_statuses?: string[];
+  sponsorship_types?: string[];
+  contact_roles?: string[];
+  issue_categories?: string[];
+  issue_severities?: string[];
+  review_assessments?: string[];
+}
+
 export interface Milestone {
   id: string;
   conference_id: string;
@@ -89,6 +152,7 @@ export interface Conference {
   phase_override: boolean;
   phase_differs: boolean;
   conference_status: string;
+  status?: string;
   start_date?: string | null;
   end_date?: string | null;
   city?: string | null;
@@ -130,8 +194,8 @@ export interface Conference {
   milestones: Milestone[];
   contacts: Contact[];
   comments_history?: Comment[];
-  source_details?: Record<string, any>;
-  score_details?: any;
+  source_details?: Record<string, unknown>;
+  score_details?: Record<string, unknown>;
 }
 
 export interface ConferenceSummary {
@@ -145,9 +209,10 @@ export interface ConferenceSummary {
   status_counts: Record<string, number>;
   health_counts?: Record<string, number>;
   phase_counts: Record<string, number>;
-  flagship_cards: any[];
-  flagship_groups: any[];
-  azure_openai: any;
+  flagship_cards: Conference[];
+  flagship_groups: Record<string, Conference[]>;
+  azure_openai: ServiceConfiguration;
+  embeddings?: ServiceConfiguration;
 }
 
 export interface FinanceSnapshot {
@@ -175,24 +240,24 @@ export interface ReferenceData {
 }
 
 export interface AppSettings {
-  azure_openai?: Record<string, any>;
-  embeddings?: Record<string, any>;
+  azure_openai?: ServiceConfiguration;
+  embeddings?: ServiceConfiguration;
   score_weights?: Record<string, number>;
   portfolio_start_year?: number;
   kpi_from_year?: number;
   kpi_to_year?: number;
   kpi_available_years?: number[];
   status_mappings?: Record<string, string>;
-  milestone_date_defaults: Record<string, any>;
-  score_settings: Record<string, any>;
+  milestone_date_defaults: Record<string, MilestoneDateOffset>;
+  score_settings: ScoreSettings;
   feature_flags: Record<string, boolean>;
   role_permissions?: Record<string, Record<string, boolean>>;
   roles?: { key: string; label: string; description: string }[];
   permission_catalog?: { key: string; label: string; description: string }[];
   assistant_system_prompt?: string;
-  reference_config?: Record<string, any[]>;
+  reference_config?: ReferenceConfig;
   reference_config_labels?: Record<string, string>;
-  llm_config: Record<string, any>;
+  llm_config?: ServiceConfiguration;
 }
 
 export interface DateTimeliness {
@@ -219,7 +284,7 @@ export interface Document {
   indexing_state: string;
   page_count: number;
   chunk_count: number;
-  embedding?: Record<string, any>;
+  embedding?: Record<string, unknown>;
 }
 
 export interface Template {
