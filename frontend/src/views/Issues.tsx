@@ -31,7 +31,7 @@ import { useNavigate } from "react-router-dom";
 
 import { useAccess } from "@/hooks/useAccess";
 import { api } from "@/lib/api";
-import type { AppSettings, Conference, Issue } from "@/types/conference";
+import type { AppSettings, Conference, Issue, ReferenceConfig } from "@/types/conference";
 
 interface ItemResponse<T> {
   items: T[];
@@ -129,7 +129,7 @@ function severityColor(value?: string) {
 
 function referenceValues(
   settings: AppSettings | null,
-  key: string,
+  key: keyof ReferenceConfig,
   fallback: string[],
 ): string[] {
   const values: unknown = settings?.reference_config?.[key];

@@ -29,6 +29,12 @@ import { api, apiUrl } from "@/lib/api";
 import { useAccess } from "@/hooks/useAccess";
 import type { ReferenceData, Template } from "@/types/conference";
 
+interface TemplateUploadValues {
+  template_name: string;
+  short_description?: string;
+  category: string;
+}
+
 interface ItemResponse<T> {
   items: T[];
 }
@@ -36,7 +42,7 @@ interface ItemResponse<T> {
 const fallbackCategories = ["Unknown", "Planning", "Application", "MOU", "Finance", "Publication", "Closeout"];
 
 export default function Templates() {
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<TemplateUploadValues>();
   const { canManageTemplates } = useAccess();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [referenceData, setReferenceData] = useState<ReferenceData | null>(null);
@@ -240,7 +246,7 @@ export default function Templates() {
                   type="primary"
                   icon={<UploadOutlined />}
                   loading={uploading}
-                  onClick={handleUpload}
+                  onClick={() => { void handleUpload(); }}
                   block
                 >
                   Upload
@@ -271,7 +277,7 @@ export default function Templates() {
       <Modal
         title="Delete Template"
         open={deleteId !== null}
-        onOk={handleDelete}
+        onOk={() => { void handleDelete(); }}
         onCancel={() => setDeleteId(null)}
         okText="Delete"
         okButtonProps={{ danger: true }}

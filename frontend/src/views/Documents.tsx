@@ -29,10 +29,18 @@ import type { UploadFile } from "antd/es/upload/interface";
 import { useEffect, useMemo, useState } from "react";
 
 import { api, apiUrl } from "@/lib/api";
-import type { Document } from "@/types/conference";
+import type { Document, ServiceVerification } from "@/types/conference";
 
 const UPLOAD_SCOPES = ["Global IEEE", "IEEE ITSS", "Conference Series"];
 const DOCUMENT_CATEGORIES = ["Policy", "Conference Operations", "Finance", "Publication", "Template Guidance", "Other"];
+
+interface DocumentUploadValues {
+  title: string;
+  document_category: string;
+  knowledge_scope: string;
+  version?: string;
+  source_url?: string;
+}
 
 interface ItemResponse<T> {
   items: T[];
@@ -61,7 +69,7 @@ interface VectorResponse {
 }
 
 export default function Documents() {
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<DocumentUploadValues>();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -69,7 +77,7 @@ export default function Documents() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [vectorPreview, setVectorPreview] = useState<VectorResponse | null>(null);
-  const [embeddingStatus, setEmbeddingStatus] = useState<Record<string, any> | null>(null);
+  const [embeddingStatus, setEmbeddingStatus] = useState<ServiceVerification | null>(null);
 
   const scopeOptions = useMemo(
     () => UPLOAD_SCOPES.map((scope) => ({ label: scope, value: scope })),
@@ -130,7 +138,7 @@ export default function Documents() {
 
   const verifyEmbeddings = async () => {
     try {
-      const status = await api<Record<string, any>>("/settings/verify-embeddings", {
+      const status = await api<ServiceVerification>("/settings/verify-embeddings", {
         method: "POST",
       });
       setEmbeddingStatus(status);
@@ -216,10 +224,10 @@ export default function Documents() {
       width: 250,
       render: (_, record) => (
         <Space>
-          <Button size="small" icon={<EyeOutlined />} onClick={() => inspectDocument(record)}>
+          <Button size="small" icon={<EyeOutlined />} onClick={() => { void inspectDocument(record); }}>
             Inspect
           </Button>
-          <Button size="small" icon={<ReloadOutlined />} onClick={() => reindexDocument(record)}>
+          <Button size="small" icon={<ReloadOutlined />} onClick={() => { void reindexDocument(record); }}>
             Rebuild
           </Button>
           <Button size="small" icon={<DownloadOutlined />} onClick={() => window.open(apiUrl(`/documents/${record.id}/download`), "_blank")} />
@@ -240,7 +248,7 @@ export default function Documents() {
           </Typography.Text>
         </div>
         <Space wrap>
-          <Button icon={<CheckCircleOutlined />} onClick={verifyEmbeddings}>
+          <Button icon={<CheckCircleOutlined />} onClick={() => { void verifyEmbeddings(); }}>
             Verify Embeddings
           </Button>
           <Button icon={<ReloadOutlined />} onClick={fetchDocuments}>
@@ -311,7 +319,7 @@ export default function Documents() {
                   type="primary"
                   icon={<SearchOutlined />}
                   loading={uploading}
-                  onClick={handleUpload}
+                  onClick={() => { void handleUpload(); }}
                 >
                   Upload and Index
                 </Button>
@@ -376,7 +384,7 @@ export default function Documents() {
       <Modal
         title="Delete Document"
         open={deleteId !== null}
-        onOk={handleDelete}
+        onOk={() => { void handleDelete(); }}
         onCancel={() => setDeleteId(null)}
         okText="Delete"
         okButtonProps={{ danger: true }}

@@ -66,12 +66,12 @@ export const borders = {
 } as const;
 
 export const shadows = {
-  surface: "0 1px 2px rgba(0, 26, 84, 0.06), 0 8px 24px rgba(0, 26, 84, 0.08)",
-  panel: "0 16px 40px rgba(0, 26, 84, 0.10)",
-  focus: "0 0 0 4px rgba(0, 145, 255, 0.12)",
-  soft: "0 12px 30px rgba(0, 26, 84, 0.08)",
-  elevated: "0 24px 60px rgba(0, 26, 84, 0.12)",
-  primaryButton: "0 10px 24px rgba(0, 145, 255, 0.18)",
+  surface: "0 1px 2px rgba(18, 59, 93, 0.06), 0 8px 24px rgba(18, 59, 93, 0.08)",
+  panel: "0 16px 40px rgba(18, 59, 93, 0.10)",
+  focus: "0 0 0 4px rgba(0, 98, 155, 0.12)",
+  soft: "0 12px 30px rgba(18, 59, 93, 0.08)",
+  elevated: "0 24px 60px rgba(18, 59, 93, 0.12)",
+  primaryButton: "0 10px 24px rgba(0, 98, 155, 0.18)",
 } as const;
 
 export const breakpoints = {

@@ -25,6 +25,16 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import type { Conference, EmailDraft } from "@/types/conference";
 
+interface EmailDraftFormValues {
+  conference_id: string;
+  recipient_names?: string;
+  recipient_addresses?: string;
+  cc_addresses?: string;
+  purpose: string;
+  instructions?: string;
+  tone: string;
+}
+
 interface ItemResponse<T> {
   items: T[];
 }
@@ -43,7 +53,7 @@ const splitList = (value?: string) =>
     .filter(Boolean);
 
 export default function EmailDrafts() {
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<EmailDraftFormValues>();
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
   const [conferences, setConferences] = useState<Conference[]>([]);
   const [loading, setLoading] = useState(true);
@@ -226,7 +236,7 @@ export default function EmailDrafts() {
               <Form.Item name="instructions" label="Optional Instructions">
                 <Input.TextArea rows={4} placeholder="Add specific points the draft should cover" />
               </Form.Item>
-              <Button type="primary" icon={<MailOutlined />} loading={generating} onClick={generateDraft} block>
+              <Button type="primary" icon={<MailOutlined />} loading={generating} onClick={() => { void generateDraft(); }} block>
                 Generate Draft
               </Button>
             </Form>
@@ -253,7 +263,7 @@ export default function EmailDrafts() {
       <Modal
         title="Delete Draft"
         open={deleteId !== null}
-        onOk={handleDelete}
+        onOk={() => { void handleDelete(); }}
         onCancel={() => setDeleteId(null)}
         okText="Delete"
         okButtonProps={{ danger: true }}

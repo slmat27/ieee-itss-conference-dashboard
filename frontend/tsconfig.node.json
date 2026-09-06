@@ -4,7 +4,7 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "tsBuildInfoFile": "../../../tsbuild/ieee-itss-tsconfig.node.tsbuildinfo",
+    "tsBuildInfoFile": "./tsconfig.node.tsbuildinfo",
     "target": "ES2023",
     "lib": ["ES2023", "DOM"],
     "module": "ESNext",

@@ -1,39 +1,39 @@
 :root {
   /* Shared UI tokens retained for compatibility with reusable starter widgets. */
-  /* Corporate palette primitives */
-  --Colors__G1: #f2f4f4;
-  --Colors__G2: #c8c6c6;
-  --Colors__G3: #969494;
-  --Colors__G4: #696969;
-  --Colors__G5: #333333;
-  --Colors__G6: #1a1a1a;
-  --Colors__White: #ffffff;
-  --Colors__Black: #000000;
-  --Colors__B0: #001a54;
-  --Colors__B1: #041e96;
-  --Colors__B2: #1446eb;
-  --Colors__B3: #0091ff;
-  --Colors__B4: #52c9ff;
-  --Colors__B5: #96e7ff;
-  --Colors__B6: #d2f5ff;
-  --Colors__M1: #5500b4;
-  --Colors__M2: #a200e6;
-  --Colors__M3: #dc46f3;
-  --Colors__M4: #ff73fa;
-  --Colors__M5: #ffafff;
-  --Colors__M6: #fddeff;
-  --Colors__Red: #ff0000;
-  --Colors__Yellow1: #ffd800;
-  --Colors__Orange1: #ff9000;
-  --Colors__Green1: #80d800;
-  --Colors__Green2: #28a000;
+  /* Application palette primitives */
+  --color-neutral-50: #F5F7FA;
+  --color-neutral-300: #D9DEE7;
+  --color-neutral-500: #94A3B8;
+  --color-neutral-600: #5B6770;
+  --color-neutral-800: #334155;
+  --color-neutral-900: #1F2933;
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-navy-900: #123B5D;
+  --color-navy-700: #0B4F75;
+  --color-blue-600: #2A6F97;
+  --color-blue-700: #00629B;
+  --color-cyan-500: #5BAFC7;
+  --color-cyan-300: #96e7ff;
+  --color-cyan-100: #d2f5ff;
+  --color-purple-800: #5E5A9C;
+  --color-purple-700: #6E6AA8;
+  --color-purple-600: #7E79B5;
+  --color-purple-400: #A09BC8;
+  --color-purple-200: #C7C4DE;
+  --color-purple-100: #ECEAF5;
+  --color-red-600: #ff0000;
+  --color-yellow-500: #ffd800;
+  --color-orange-500: #ff9000;
+  --color-green-400: #80d800;
+  --color-green-600: #28a000;
 
   /* Chart palette primitives */
-  --ColorsCharts__Data1: #1446eb;
-  --ColorsCharts__Data2: #0091ff;
-  --ColorsCharts__Data3: #52c9ff;
-  --ColorsCharts__Data4: #a200e6;
-  --ColorsCharts__Data5: #dc46f3;
+  --color-chart-1: #2A6F97;
+  --color-chart-2: #00629B;
+  --color-chart-3: #5BAFC7;
+  --color-chart-4: #6E6AA8;
+  --color-chart-5: #7E79B5;
 
   /* Typography */
   --app-font-sans:
@@ -100,74 +100,74 @@
   --border-width-default: 1px;
 
   /* Palette and semantic surfaces */
-  --background: var(--Colors__White);
-  --foreground: var(--Colors__B0);
-  --text: var(--Colors__B0);
-  --text-secondary: var(--Colors__G4);
-  --text-tertiary: var(--Colors__G3);
-  --text-quaternary: var(--Colors__G2);
-  --muted: var(--Colors__G1);
-  --muted-foreground: var(--Colors__G4);
-  --card: var(--Colors__White);
-  --card-foreground: var(--Colors__B0);
-  --bg-layout: var(--Colors__G1);
-  --bg-container: var(--Colors__White);
-  --popover: var(--Colors__White);
-  --popover-foreground: var(--Colors__B0);
-  --surface-elevated: var(--Colors__White);
-  --surface-subtle: var(--Colors__G1);
-  --surface-dark: var(--Colors__B0);
-  --surface-dark-hover: var(--Colors__B1);
+  --background: var(--color-white);
+  --foreground: var(--color-navy-900);
+  --text: var(--color-navy-900);
+  --text-secondary: var(--color-neutral-600);
+  --text-tertiary: var(--color-neutral-500);
+  --text-quaternary: var(--color-neutral-300);
+  --muted: var(--color-neutral-50);
+  --muted-foreground: var(--color-neutral-600);
+  --card: var(--color-white);
+  --card-foreground: var(--color-navy-900);
+  --bg-layout: var(--color-neutral-50);
+  --bg-container: var(--color-white);
+  --popover: var(--color-white);
+  --popover-foreground: var(--color-navy-900);
+  --surface-elevated: var(--color-white);
+  --surface-subtle: var(--color-neutral-50);
+  --surface-dark: var(--color-navy-900);
+  --surface-dark-hover: var(--color-navy-700);
   --surface-dark-border: rgba(255, 255, 255, 0.08);
   --surface-dark-hover-overlay: rgba(255, 255, 255, 0.08);
   --surface-dark-outline: rgba(255, 255, 255, 0.72);
   --surface-dark-muted: rgba(255, 255, 255, 0.78);
-  --surface-border: var(--Colors__G2);
-  --border: var(--Colors__G2);
-  --border-subtle: rgba(0, 26, 84, 0.08);
-  --input: rgba(0, 26, 84, 0.16);
-  --ring: rgba(0, 145, 255, 0.28);
-  --surface-quiet: var(--Colors__G1);
+  --surface-border: var(--color-neutral-300);
+  --border: var(--color-neutral-300);
+  --border-subtle: rgba(18, 59, 93, 0.08);
+  --input: rgba(18, 59, 93, 0.16);
+  --ring: rgba(0, 98, 155, 0.28);
+  --surface-quiet: var(--color-neutral-50);
 
-  --primary: var(--Colors__B3);
-  --primary-hover: #33a7ff;
+  --primary: var(--color-blue-700);
+  --primary-hover: #1B7FB5;
   --primary-active: #0074cc;
-  --primary-foreground: var(--Colors__White);
-  --info: var(--Colors__B2);
-  --secondary: var(--Colors__B6);
-  --secondary-foreground: var(--Colors__B1);
-  --accent: var(--Colors__M6);
-  --accent-foreground: var(--Colors__B1);
+  --primary-foreground: var(--color-white);
+  --info: var(--color-blue-600);
+  --secondary: var(--color-cyan-100);
+  --secondary-foreground: var(--color-navy-700);
+  --accent: var(--color-purple-100);
+  --accent-foreground: var(--color-navy-700);
 
-  --control-item-bg-hover: var(--Colors__G1);
+  --control-item-bg-hover: var(--color-neutral-50);
   --control-item-bg-active: #cce9ff;
   --control-item-bg-active-hover: #b2deff;
   --menu-hover: #d6d9de;
   --menu-hover-on-dark: #334876;
-  --menu-selected-bg: var(--Colors__B0);
-  --menu-selected-color: var(--Colors__White);
-  --menu-submenu-bg: var(--Colors__G1);
+  --menu-selected-bg: var(--color-navy-900);
+  --menu-selected-color: var(--color-white);
+  --menu-submenu-bg: var(--color-neutral-50);
 
-  --destructive: var(--Colors__Red);
-  --destructive-foreground: var(--Colors__White);
-  --warning: var(--Colors__Orange1);
+  --destructive: var(--color-red-600);
+  --destructive-foreground: var(--color-white);
+  --warning: var(--color-orange-500);
   --warning-foreground: #3b2400;
-  --success: var(--Colors__Green2);
-  --success-foreground: var(--Colors__White);
+  --success: var(--color-green-600);
+  --success-foreground: var(--color-white);
 
-  --chart-1: var(--ColorsCharts__Data1);
-  --chart-2: var(--ColorsCharts__Data2);
-  --chart-3: var(--ColorsCharts__Data3);
-  --chart-4: var(--ColorsCharts__Data4);
-  --chart-5: var(--ColorsCharts__Data5);
+  --chart-1: var(--color-chart-1);
+  --chart-2: var(--color-chart-2);
+  --chart-3: var(--color-chart-3);
+  --chart-4: var(--color-chart-4);
+  --chart-5: var(--color-chart-5);
 
-  --shadow-soft: 0 12px 30px rgba(0, 26, 84, 0.08);
-  --shadow-panel: 0 24px 60px rgba(0, 26, 84, 0.12);
-  --shadow-ring: 0 0 0 4px rgba(0, 145, 255, 0.12);
+  --shadow-soft: 0 12px 30px rgba(18, 59, 93, 0.08);
+  --shadow-panel: 0 24px 60px rgba(18, 59, 93, 0.12);
+  --shadow-ring: 0 0 0 4px rgba(0, 98, 155, 0.12);
   --shadow-surface:
-    0 1px 2px rgba(0, 26, 84, 0.06), 0 8px 24px rgba(0, 26, 84, 0.08);
-  --shadow-panel-strong: 0 16px 40px rgba(0, 26, 84, 0.1);
-  --shadow-primary: 0 10px 24px rgba(0, 145, 255, 0.18);
+    0 1px 2px rgba(18, 59, 93, 0.06), 0 8px 24px rgba(18, 59, 93, 0.08);
+  --shadow-panel-strong: 0 16px 40px rgba(18, 59, 93, 0.1);
+  --shadow-primary: 0 10px 24px rgba(0, 98, 155, 0.18);
 
   /* Ant Design helper aliases */
   --ant-card-surface-shadow: var(--shadow-panel);

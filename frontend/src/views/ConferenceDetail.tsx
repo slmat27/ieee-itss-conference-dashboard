@@ -34,13 +34,63 @@ import {
   Typography,
   message,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useAccess } from "@/hooks/useAccess";
 import { api } from "@/lib/api";
 import type { AppSettings, Comment, Conference, Contact, DateTimeliness, FinanceSnapshot, Milestone } from "@/types/conference";
+
+interface ConferenceFactsFormValues {
+  official_title?: string;
+  conference_number?: string | number;
+  conference_series?: string;
+  start_date?: string;
+  end_date?: string;
+  city?: string;
+  country?: string;
+  website?: string;
+  estimated_attendees?: number;
+  actual_attendees?: number;
+  estimated_paper_submissions?: number;
+  actual_paper_submissions?: number;
+  total_income_current?: number;
+  total_expense_current?: number;
+  budgeted_income_total?: number;
+  budgeted_expense_total?: number;
+  itss_loan_requested?: boolean;
+  itss_loan_amount?: number;
+  xplore_posting_date?: string;
+  accounting_close_date?: string;
+  comments?: string;
+  committee_contact?: string;
+  change_comment?: string;
+}
+
+interface MilestoneFormValues {
+  status: string;
+  due_date?: string;
+  comments?: string;
+}
+
+interface ContactFormValues {
+  role: string;
+  name: string;
+  email?: string;
+  organization?: string;
+  phone?: string;
+  is_primary: boolean;
+  active?: boolean;
+}
+
+interface CommentFormValues {
+  comment: string;
+}
+
+interface DeleteConferenceFormValues {
+  confirmation_record_number: string | number;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   unknown: "default",
@@ -172,12 +222,12 @@ export default function ConferenceDetail() {
   const [commentEditOpen, setCommentEditOpen] = useState(false);
   const [activeComment, setActiveComment] = useState<Comment | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [factForm] = Form.useForm();
-  const [milestoneForm] = Form.useForm();
-  const [contactForm] = Form.useForm();
-  const [commentForm] = Form.useForm();
-  const [newCommentForm] = Form.useForm();
-  const [deleteForm] = Form.useForm();
+  const [factForm] = Form.useForm<ConferenceFactsFormValues>();
+  const [milestoneForm] = Form.useForm<MilestoneFormValues>();
+  const [contactForm] = Form.useForm<ContactFormValues>();
+  const [commentForm] = Form.useForm<CommentFormValues>();
+  const [newCommentForm] = Form.useForm<CommentFormValues>();
+  const [deleteForm] = Form.useForm<DeleteConferenceFormValues>();
 
   const statusOptions = settings?.reference_config?.normalized_statuses ?? [
     "Unknown",
@@ -208,7 +258,7 @@ export default function ConferenceDetail() {
     value: item.code,
   }));
 
-  const loadConference = async () => {
+  const loadConference = useCallback(async () => {
     if (!id) return;
     const [data, financeSnapshots] = await Promise.all([
       api<Conference>(`/conferences/${id}`),
@@ -216,7 +266,7 @@ export default function ConferenceDetail() {
     ]);
     setConference(data);
     setSnapshots(financeSnapshots);
-  };
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
@@ -224,7 +274,7 @@ export default function ConferenceDetail() {
     Promise.all([loadConference(), api<AppSettings>("/settings").then(setSettings).catch(() => {})])
       .catch((err) => message.error(err instanceof Error ? err.message : "Conference could not be loaded"))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, loadConference]);
 
   const scoreColor = useMemo(() => {
     const score = conference?.score ?? 0;
@@ -522,7 +572,7 @@ export default function ConferenceDetail() {
         body: JSON.stringify({ confirmation_record_number: values.confirmation_record_number }),
       });
       message.success("Conference record deleted");
-      navigate("/conferences");
+      void navigate("/conferences");
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Conference was not deleted");
     } finally {
@@ -602,7 +652,7 @@ export default function ConferenceDetail() {
         canEdit ? (
           <Space size={4}>
             <Button icon={<EditOutlined />} onClick={() => openContactEditor(row)} shape="circle" size="small" />
-            <Popconfirm title="Delete this contact?" onConfirm={() => deleteContact(row)}>
+            <Popconfirm title="Delete this contact?" onConfirm={() => { void deleteContact(row); }}>
               <Button danger icon={<DeleteOutlined />} shape="circle" size="small" />
             </Popconfirm>
           </Space>
@@ -637,7 +687,7 @@ export default function ConferenceDetail() {
       <section className="detail-hero">
         <div>
           <Space wrap style={{ marginBottom: 8 }}>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/conferences")}>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => { void navigate("/conferences"); }}>
               Back
             </Button>
             <Tag color={statusColor(conference.status_band)}>{conference.status_band}</Tag>
@@ -657,7 +707,7 @@ export default function ConferenceDetail() {
             format={(value) => `${value ?? 0}`}
           />
           <Space wrap>
-            <Button icon={<ReloadOutlined />} onClick={handleRefreshFacts} loading={refreshing}>
+            <Button icon={<ReloadOutlined />} onClick={() => { void handleRefreshFacts(); }} loading={refreshing}>
               Refresh Facts
             </Button>
             {canEdit && (
@@ -819,7 +869,7 @@ export default function ConferenceDetail() {
                   <Form.Item name="comment" rules={[{ required: true, message: "Write a comment first." }]}>
                     <Input.TextArea rows={3} placeholder="Add a conference note..." />
                   </Form.Item>
-                  <Button type="primary" onClick={addComment} loading={saving}>
+                  <Button type="primary" onClick={() => { void addComment(); }} loading={saving}>
                     Add Comment
                   </Button>
                 </Form>
@@ -836,7 +886,7 @@ export default function ConferenceDetail() {
                         {canEdit && (
                           <Space size={4}>
                             <Button icon={<EditOutlined />} onClick={() => openCommentEditor(comment)} shape="circle" size="small" />
-                            <Popconfirm title="Delete this comment?" onConfirm={() => deleteComment(comment)}>
+                            <Popconfirm title="Delete this comment?" onConfirm={() => { void deleteComment(comment); }}>
                               <Button danger icon={<DeleteOutlined />} shape="circle" size="small" />
                             </Popconfirm>
                           </Space>
@@ -856,7 +906,7 @@ export default function ConferenceDetail() {
         title="Edit Conference Details"
         open={factsOpen}
         onCancel={() => setFactsOpen(false)}
-        onOk={saveFacts}
+        onOk={() => { void saveFacts(); }}
         okText="Save Details"
         confirmLoading={saving}
         width={860}
@@ -995,7 +1045,7 @@ export default function ConferenceDetail() {
         title={activeMilestone ? `Edit ${activeMilestone.name ?? activeMilestone.code}` : "Edit Milestone"}
         open={milestoneOpen}
         onCancel={() => setMilestoneOpen(false)}
-        onOk={saveMilestone}
+        onOk={() => { void saveMilestone(); }}
         okText="Save Milestone"
         confirmLoading={saving}
       >
@@ -1019,7 +1069,7 @@ export default function ConferenceDetail() {
         title={activeContact ? "Edit Contact" : "Add Contact"}
         open={contactOpen}
         onCancel={() => setContactOpen(false)}
-        onOk={saveContact}
+        onOk={() => { void saveContact(); }}
         okText={activeContact ? "Save Contact" : "Add Contact"}
         confirmLoading={saving}
       >
@@ -1056,7 +1106,7 @@ export default function ConferenceDetail() {
         title="Edit Comment"
         open={commentEditOpen}
         onCancel={() => setCommentEditOpen(false)}
-        onOk={saveComment}
+        onOk={() => { void saveComment(); }}
         okText="Save Comment"
         confirmLoading={saving}
       >
@@ -1071,7 +1121,7 @@ export default function ConferenceDetail() {
         title="Delete Conference Record"
         open={deleteOpen}
         onCancel={() => setDeleteOpen(false)}
-        onOk={deleteConference}
+        onOk={() => { void deleteConference(); }}
         okText="Delete Record"
         okButtonProps={{ danger: true }}
         confirmLoading={saving}
@@ -1086,8 +1136,10 @@ export default function ConferenceDetail() {
             rules={[
               { required: true, message: "Enter the record number to confirm deletion." },
               {
-                validator: (_, value) =>
-                  recordLabel(value) === recordLabel(conference.conference_number)
+                validator: (_rule: unknown, value: unknown) =>
+                  recordLabel(
+                    typeof value === "string" || typeof value === "number" ? value : null,
+                  ) === recordLabel(conference.conference_number)
                     ? Promise.resolve()
                     : Promise.reject(new Error("Record number does not match.")),
               },

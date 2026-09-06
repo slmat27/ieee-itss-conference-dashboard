@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 import io
 import json
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect
 
@@ -14,6 +16,8 @@ from app.main import create_app
 
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.setenv("ALLOW_ANONYMOUS_LOCAL", "true")
     monkeypatch.setenv("APP_DATABASE_PATH", str(tmp_path / "data" / "itss_dashboard.db"))
     monkeypatch.setenv("APP_DOCUMENT_PATH", str(tmp_path / "data" / "documents"))
@@ -31,6 +35,21 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setattr(dashboard, "embed_texts", lambda texts: [[0.1, 0.2, 0.3] for _ in texts])
     app = create_app(storage_dir=tmp_path / "runs")
     return TestClient(app)
+
+
+def test_embedding_configuration_uses_neutral_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TEI_EMBEDDING_BASE_URL", "")
+    monkeypatch.setenv("TEI_EMBEDDING_MODEL", "")
+    monkeypatch.setenv("EMBEDDING_BASE_URL", "https://embeddings.example")
+    monkeypatch.setenv("EMBEDDING_MODEL", "neutral-test-model")
+
+    assert dashboard.embedding_base_url() == "https://embeddings.example"
+    assert dashboard.embedding_model() == "neutral-test-model"
+    assert dashboard.embedding_status(mask=False)["provider"] == (
+        "TEI-compatible embedding service"
+    )
 
 
 def test_first_run_creates_database_and_reference_data(tmp_path: Path, monkeypatch) -> None:
@@ -422,6 +441,37 @@ def test_overview_kpi_period_is_persisted_and_filters_summary(tmp_path: Path, mo
         assert invalid.status_code == 422
 
 
+def test_milestone_offsets_handle_optional_values() -> None:
+    setting = SimpleNamespace(
+        value_json=json.dumps(
+            {
+                "APPLICATION": {
+                    "anchor": None,
+                    "months": None,
+                    "days": None,
+                    "warning_days": None,
+                }
+            }
+        )
+    )
+    session = SimpleNamespace(get=lambda _model, _key: setting)
+
+    offsets = dashboard.milestone_date_offsets(session)
+
+    assert offsets["APPLICATION"] == {
+        "anchor": "start",
+        "months": -24,
+        "days": 0,
+        "warning_days": 0,
+    }
+    assert dashboard.milestone_due_date(
+        "APPLICATION",
+        date(2030, 6, 1),
+        None,
+        offsets=offsets,
+    ) == date(2028, 6, 11)
+
+
 def test_conference_status_uses_score_without_overdue_override(monkeypatch) -> None:
     monkeypatch.setattr(
         dashboard,
@@ -605,6 +655,11 @@ def test_import_applies_selected_valid_fields_when_other_fields_have_errors(tmp_
         conferences = client.get("/api/conferences", params={"q": "98765"}).json()["items"]
         assert conferences[0]["application_status"] == "Approved"
         assert conferences[0]["mou_status"] == "Approved"
+        milestones = {item["code"]: item for item in conferences[0]["milestones"]}
+        assert milestones["APPLICATION"]["status"] == "Approved"
+        assert milestones["APPLICATION"]["manual_override"] is True
+        assert milestones["MOU"]["status"] == "Approved"
+        assert milestones["MOU"]["manual_override"] is True
         assert conferences[0]["start_date"] is None
         assert conferences[0]["end_date"] is None
 
@@ -681,6 +736,30 @@ def test_document_upload_indexes_text_and_chat_retrieves_it(tmp_path: Path, monk
         assert all_kbs.json()["sources"]
 
 
+def test_document_vectors_handles_absent_embeddings(monkeypatch) -> None:
+    document = object()
+    session = SimpleNamespace(get=lambda _model, _document_id: document)
+    monkeypatch.setattr(
+        dashboard,
+        "document_vector_rows",
+        lambda _document_id: [
+            {"index": 0, "text": "No embedding key"},
+            {"index": 1, "text": "Explicitly absent", "embedding": None},
+        ],
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "document_payload",
+        lambda _document: {"id": "document-1"},
+    )
+    monkeypatch.setattr(dashboard, "vector_summary", lambda _document_id: {})
+
+    result = dashboard.document_vectors("document-1", session)
+
+    assert [chunk["has_embedding"] for chunk in result["chunks"]] == [False, False]
+    assert [chunk["dimension"] for chunk in result["chunks"]] == [0, 0]
+
+
 def test_template_upload_download_and_delete(tmp_path: Path, monkeypatch) -> None:
     with _client(tmp_path, monkeypatch) as client:
         upload = client.post(
@@ -708,6 +787,53 @@ def test_template_upload_download_and_delete(tmp_path: Path, monkeypatch) -> Non
         deleted = client.delete(f"/api/templates/{item['id']}")
         assert deleted.status_code == 200
         assert client.get("/api/templates").json()["items"] == []
+
+
+@pytest.mark.parametrize("key", ["score_weights", "portfolio_start_year"])
+def test_settings_reports_missing_required_database_setting(
+    tmp_path: Path,
+    monkeypatch,
+    key: str,
+) -> None:
+    with _client(tmp_path, monkeypatch):
+        state = dashboard.get_state()
+        with state.session_factory() as session:
+            setting = session.get(dashboard.DashboardSettings, key)
+            assert setting is not None
+            session.delete(setting)
+            session.commit()
+
+            with pytest.raises(
+                RuntimeError,
+                match=f"Required dashboard setting is missing: {key}",
+            ):
+                dashboard.settings(session)
+
+
+def test_import_parsing_handles_missing_and_mixed_values() -> None:
+    session = SimpleNamespace()
+
+    assert dashboard.parse_import_integer("2032") == 2032
+    with pytest.raises(TypeError, match="missing"):
+        dashboard.parse_import_integer(None)
+    assert (
+        dashboard.import_value_for_field(
+            "estimated_attendees",
+            "125.0",
+            session,
+        )
+        == 125
+    )
+    assert dashboard.import_value_for_field(
+        "start_date",
+        "2032-06-15",
+        session,
+    ) == date(2032, 6, 15)
+    assert dashboard.import_value_for_field("city", "  Berlin  ", session) == "Berlin"
+    assert (
+        dashboard.import_value_for_field("actual_attendees", None, session)
+        is dashboard._SKIP_IMPORT_VALUE
+    )
 
 
 def test_settings_masks_azure_openai_secret(tmp_path: Path, monkeypatch) -> None:

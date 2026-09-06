@@ -83,7 +83,14 @@ type SelectionMap = Record<string, RowSelection>;
 const formatValue = (value: unknown) => {
   if (value === null || value === undefined || value === "") return "-";
   if (typeof value === "boolean") return value ? "Yes" : "No";
-  return String(value);
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "[unavailable]";
+  }
 };
 
 const selectableFields = (row: ImportRow): string[] => {
@@ -369,7 +376,7 @@ export default function Imports() {
                 icon={<CheckCircleOutlined />}
                 loading={validating}
                 disabled={!fileList.length}
-                onClick={handleValidate}
+                onClick={() => { void handleValidate(); }}
               >
                 Start Validation
               </Button>
@@ -406,11 +413,11 @@ export default function Imports() {
                   icon={<UploadOutlined />}
                   disabled={!preview || !selectedCount || !!result}
                   loading={applying}
-                  onClick={handleApply}
+                  onClick={() => { void handleApply(); }}
                 >
                   Apply Approved Changes
                 </Button>
-                <Button danger icon={<RollbackOutlined />} disabled={!batchId} onClick={handleRollback}>
+                <Button danger icon={<RollbackOutlined />} disabled={!batchId} onClick={() => { void handleRollback(); }}>
                   Rollback Last Import
                 </Button>
               </Space>

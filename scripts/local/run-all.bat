@@ -1,11 +1,10 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0\..\.."
 
 echo Starting IEEE ITSS Conference Status Dashboard...
 echo.
-echo Backend:  http://127.0.0.1:8029
-echo Frontend: http://127.0.0.1:5191
+echo The configured backend and frontend URLs will be printed after startup.
 echo.
 echo This launcher will wait until both services answer, then open the dashboard.
 echo The launcher window will close automatically after successful startup.

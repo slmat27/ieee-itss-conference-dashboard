@@ -38,6 +38,7 @@ class KubernetesWorkerBackend:
         ttl_seconds_after_finished: int = 300,
         backoff_limit: int = 0,
         poll_interval_seconds: float = 1.0,
+        worker_token_secret: str = "local-development-secret",
     ) -> None:
         self.store = store
         self.namespace = namespace
@@ -48,10 +49,15 @@ class KubernetesWorkerBackend:
         self.ttl_seconds_after_finished = ttl_seconds_after_finished
         self.backoff_limit = backoff_limit
         self.poll_interval_seconds = poll_interval_seconds
+        self.worker_token_secret = worker_token_secret
 
     def launch(self, record: RunRecord) -> LaunchedWorkerJob:
         self.store.build_worker_bundle(record)
-        token = create_worker_token(run_id=record.run_id, owner_key=record.owner_key)
+        token = create_worker_token(
+            run_id=record.run_id,
+            owner_key=record.owner_key,
+            secret=self.worker_token_secret,
+        )
         manifest = self.worker_job_manifest(record, token=token)
         payload = self._request_json(
             "POST",
@@ -106,8 +112,14 @@ class KubernetesWorkerBackend:
         for item in payload.get("items", []) or []:
             if not isinstance(item, dict):
                 continue
-            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-            status = item.get("status") if isinstance(item.get("status"), dict) else {}
+            metadata_value = item.get("metadata")
+            status_value = item.get("status")
+            metadata: dict[str, Any] = (
+                metadata_value if isinstance(metadata_value, dict) else {}
+            )
+            status: dict[str, Any] = (
+                status_value if isinstance(status_value, dict) else {}
+            )
             pod_name = str(metadata.get("name") or "")
             if not pod_name:
                 continue

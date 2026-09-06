@@ -30,6 +30,11 @@ interface CitationSource {
   scope?: string;
 }
 
+interface AssistantFormValues {
+  knowledge_scope: string;
+  question: string;
+}
+
 interface ChatResponse {
   answer: string;
   sources: CitationSource[];
@@ -97,7 +102,7 @@ function renderInline(text: string) {
 }
 
 export default function Assistant() {
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<AssistantFormValues>();
   const [answer, setAnswer] = useState<ChatResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -165,7 +170,7 @@ export default function Assistant() {
                 type="primary"
                 icon={<SendOutlined />}
                 loading={loading}
-                onClick={ask}
+                onClick={() => { void ask(); }}
                 block
               >
                 Ask Assistant

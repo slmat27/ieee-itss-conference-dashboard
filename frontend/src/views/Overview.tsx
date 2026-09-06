@@ -29,24 +29,24 @@ const STATUS_COLORS: Record<string, string> = {
   "at risk": "#ff7a45",
   critical: "#ff4d4f",
   blocked: "#ff4d4f",
-  "not started": "#696969",
-  "in progress": "#0091ff",
+  "not started": "#5B6770",
+  "in progress": "#00629B",
   complete: "#28a000",
-  closed: "#696969",
-  cancelled: "#696969",
+  closed: "#5B6770",
+  cancelled: "#5B6770",
   active: "#28a000",
-  planning: "#0091ff",
-  completed: "#696969",
+  planning: "#00629B",
+  completed: "#5B6770",
   pending: "#ff9000",
   risk: "#ff4d4f",
-  proposed: "#5500b4",
-  inactive: "#c8c6c6",
+  proposed: "#5E5A9C",
+  inactive: "#D9DEE7",
 };
 
 const SPONSORSHIP_COLORS: Record<string, string> = {
-  "financially sponsored": "#0091ff",
+  "financially sponsored": "#00629B",
   "financially co-sponsored": "#28a000",
-  "technically co-sponsored": "#dc46f3",
+  "technically co-sponsored": "#7E79B5",
 };
 
 const CARD_WINDOW_SIZE = 4;
@@ -59,11 +59,11 @@ const FLAGSHIP_SERIES = [
 type ChartDatum = { name: string; value: number };
 
 function statusColor(value?: string | null) {
-  return STATUS_COLORS[String(value ?? "").toLowerCase()] ?? "#0091ff";
+  return STATUS_COLORS[String(value ?? "").toLowerCase()] ?? "#00629B";
 }
 
 function sponsorshipColor(value?: string | null) {
-  return SPONSORSHIP_COLORS[String(value ?? "").toLowerCase()] ?? "#696969";
+  return SPONSORSHIP_COLORS[String(value ?? "").toLowerCase()] ?? "#5B6770";
 }
 
 function chartTotal(data: ChartDatum[]) {
@@ -132,7 +132,7 @@ function formatDate(value?: string | null) {
   }).format(date);
 }
 
-function formatDateRange(card: any) {
+function formatDateRange(card: Conference) {
   if (!card.start_date && !card.end_date) return "Dates not set";
   if (card.start_date && card.end_date) return `${formatDate(card.start_date)} – ${formatDate(card.end_date)}`;
   return formatDate(card.start_date ?? card.end_date);
@@ -145,11 +145,11 @@ function formatRecordNumber(value?: string | number | null) {
   return String(value).replace(/\.0+$/, "");
 }
 
-function locationLabel(card: any) {
+function locationLabel(card: Conference) {
   return [card.city, card.country].filter(Boolean).join(", ") || "Location not set";
 }
 
-function conferenceTitle(card: any) {
+function conferenceTitle(card: Conference) {
   return card.canonical_name || card.official_title || `${card.acronym ?? "Conference"} ${card.year ?? ""}`;
 }
 
@@ -157,12 +157,12 @@ function scoreLabel(value?: number | null) {
   return Number.isFinite(Number(value)) ? Math.round(Number(value)) : 0;
 }
 
-function dateSortValue(card: any) {
+function dateSortValue(card: Conference) {
   const value = card.start_date ?? card.end_date;
   return value ? new Date(value).getTime() || 0 : 0;
 }
 
-function flagshipSeriesKey(card: any) {
+function flagshipSeriesKey(card: Conference) {
   const acronym = String(card.acronym ?? "").toUpperCase();
   const series = String(card.conference_series ?? "").toUpperCase();
   if (acronym === "IV" || series === "IV" || series.includes("INTELLIGENT VEHICLES")) return "IV";
@@ -170,12 +170,12 @@ function flagshipSeriesKey(card: any) {
   return "";
 }
 
-function laneWindow(cards: any[], start: number) {
+function laneWindow(cards: Conference[], start: number) {
   if (cards.length <= CARD_WINDOW_SIZE) return cards;
   return Array.from({ length: CARD_WINDOW_SIZE }, (_, index) => cards[(start + index) % cards.length]);
 }
 
-function ConferenceCarouselCard({ card, onOpen }: { card: any; onOpen: () => void }) {
+function ConferenceCarouselCard({ card, onOpen }: { card: Conference; onOpen: () => void }) {
   const status = card.conference_status ?? card.status ?? "Status pending";
   const health = card.status_band ?? "Health pending";
   const showHealth = String(health).trim().toLowerCase() !== String(status).trim().toLowerCase();
@@ -260,8 +260,8 @@ export default function Overview() {
   const flagshipCards = useMemo(() => {
     const cards = summary?.flagship_cards ?? [];
     return cards
-      .filter((card: any) => card.conference_number)
-      .sort((a: any, b: any) => {
+      .filter((card) => card.conference_number)
+      .sort((a, b) => {
         const seriesCompare = flagshipSeriesKey(a).localeCompare(flagshipSeriesKey(b));
         if (seriesCompare !== 0) return seriesCompare;
         return Number(a.year ?? 0) - Number(b.year ?? 0);
@@ -269,9 +269,9 @@ export default function Overview() {
   }, [summary]);
 
   const flagshipLanes = useMemo(() => {
-    const grouped = new Map<string, any[]>();
+    const grouped = new Map<string, Conference[]>();
     FLAGSHIP_SERIES.forEach((series) => grouped.set(series.key, []));
-    flagshipCards.forEach((card: any) => {
+    flagshipCards.forEach((card) => {
       const key = flagshipSeriesKey(card);
       if (grouped.has(key)) grouped.get(key)?.push(card);
     });
@@ -509,11 +509,11 @@ export default function Overview() {
                         ))}
                       </Pie>
                       <Tooltip
-                        formatter={(value, name) => [`${value} conferences`, humanizeLabel(String(name))]}
+                        formatter={(value, name) => [`${String(value ?? 0)} conferences`, humanizeLabel(String(name))]}
                         contentStyle={{
-                          border: "1px solid rgba(0, 26, 84, 0.12)",
+                          border: "1px solid rgba(18, 59, 93, 0.12)",
                           borderRadius: 8,
-                          boxShadow: "0 10px 24px rgba(0, 26, 84, 0.12)",
+                          boxShadow: "0 10px 24px rgba(18, 59, 93, 0.12)",
                         }}
                       />
                     </PieChart>
@@ -527,7 +527,7 @@ export default function Overview() {
                   statusData,
                   statusTotal,
                   (entry) => statusColor(entry.name),
-                  (entry) => navigate(`/conferences?status=${encodeURIComponent(entry.name)}`),
+                  (entry) => { void navigate(`/conferences?status=${encodeURIComponent(entry.name)}`); },
                 )}
               </div>
             ) : (
@@ -560,11 +560,11 @@ export default function Overview() {
                         ))}
                       </Pie>
                       <Tooltip
-                        formatter={(value, name) => [`${value} conferences`, humanizeLabel(String(name))]}
+                        formatter={(value, name) => [`${String(value ?? 0)} conferences`, humanizeLabel(String(name))]}
                         contentStyle={{
-                          border: "1px solid rgba(0, 26, 84, 0.12)",
+                          border: "1px solid rgba(18, 59, 93, 0.12)",
                           borderRadius: 8,
-                          boxShadow: "0 10px 24px rgba(0, 26, 84, 0.12)",
+                          boxShadow: "0 10px 24px rgba(18, 59, 93, 0.12)",
                         }}
                       />
                     </PieChart>
@@ -578,7 +578,7 @@ export default function Overview() {
                   phaseData,
                   phaseTotal,
                   (entry) => lifecyclePhaseColor(entry.name),
-                  (entry) => navigate(`/conferences?phase=${encodeURIComponent(entry.name)}`),
+                  (entry) => { void navigate(`/conferences?phase=${encodeURIComponent(entry.name)}`); },
                 )}
               </div>
             ) : (
@@ -633,11 +633,11 @@ export default function Overview() {
                   </div>
 
                   <div className="flagship-carousel-grid">
-                    {visibleCards.map((card: any) => (
+                    {visibleCards.map((card) => (
                       <ConferenceCarouselCard
                         key={card.id ?? `${card.acronym}-${card.year}`}
                         card={card}
-                        onOpen={() => card.id && navigate(`/conferences/${card.id}`)}
+                        onOpen={() => { if (card.id) void navigate(`/conferences/${card.id}`); }}
                       />
                     ))}
                   </div>
@@ -693,7 +693,7 @@ export default function Overview() {
               <ConferenceCarouselCard
                 key={card.id}
                 card={card}
-                onOpen={() => navigate(`/conferences/${card.id}`)}
+                onOpen={() => { void navigate(`/conferences/${card.id}`); }}
               />
             ))}
           </div>
@@ -747,7 +747,7 @@ export default function Overview() {
               <ConferenceCarouselCard
                 key={card.id}
                 card={card}
-                onOpen={() => navigate(`/conferences/${card.id}`)}
+                onOpen={() => { void navigate(`/conferences/${card.id}`); }}
               />
             ))}
           </div>

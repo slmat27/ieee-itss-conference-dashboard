@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
-Set-Location $PSScriptRoot
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+Set-Location -LiteralPath $ProjectRoot
 
 function Import-DotEnv {
   param([string]$Path)
@@ -9,7 +10,10 @@ function Import-DotEnv {
     $line = $_.Trim()
     if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) { return }
     $key, $value = $line.Split("=", 2)
-    [Environment]::SetEnvironmentVariable($key.Trim(), $value.Trim().Trim('"').Trim("'"), "Process")
+    $key = $key.Trim()
+    if ($null -eq [Environment]::GetEnvironmentVariable($key, "Process")) {
+      [Environment]::SetEnvironmentVariable($key, $value.Trim().Trim('"').Trim("'"), "Process")
+    }
   }
 }
 
@@ -44,10 +48,14 @@ function Wait-ForUrl {
   throw "$Name did not answer within $TimeoutSeconds seconds. Check its visible service window."
 }
 
-$envPath = Join-Path $PSScriptRoot ".env"
+$envPath = Join-Path $ProjectRoot ".env"
 Import-DotEnv $envPath
-$backendPort = if ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { "8029" }
+if (-not $env:APP_ENV) { $env:APP_ENV = "local" }
+if (-not $env:HOST) { $env:HOST = "127.0.0.1" }
+$backendPort = if ($env:PORT) { $env:PORT } elseif ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { "8029" }
 $frontendPort = if ($env:FRONTEND_PORT) { $env:FRONTEND_PORT } else { "5191" }
+$env:PORT = $backendPort
+$env:BACKEND_PORT = $backendPort
 $backendUrl = "http://127.0.0.1:$backendPort"
 $frontendUrl = "http://127.0.0.1:$frontendPort"
 
@@ -57,14 +65,14 @@ if (Test-Url "$backendUrl/healthz") {
   Write-Host "Backend is already running."
 }
 else {
-  Start-Process powershell -WorkingDirectory $PSScriptRoot -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "run-backend.ps1")
+  Start-Process powershell -WorkingDirectory $ProjectRoot -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "run-backend.ps1")
 }
 Start-Sleep -Seconds 2
 if (Test-Url "$frontendUrl/") {
   Write-Host "Frontend is already running."
 }
 else {
-  Start-Process powershell -WorkingDirectory $PSScriptRoot -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "run-frontend.ps1")
+  Start-Process powershell -WorkingDirectory $ProjectRoot -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "run-frontend.ps1")
 }
 
 Wait-ForUrl "$backendUrl/healthz" "Backend"

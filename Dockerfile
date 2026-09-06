@@ -46,6 +46,8 @@ WORKDIR /app
 ENV PATH="/app/.venv/bin:${PATH}"
 
 COPY --from=python-deps /app/.venv /app/.venv
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
 COPY app ./app
 COPY --from=frontend-builder /frontend/dist ./static
 
@@ -54,6 +56,5 @@ RUN useradd --create-home --uid 1000 appuser \
     && chown -R appuser:appuser /app /storage
 
 USER 1000:1000
-EXPOSE 8023
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8023"]
+CMD ["python", "-m", "app.server"]

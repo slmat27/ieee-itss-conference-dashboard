@@ -19,3 +19,11 @@ restored_App.tsx
 .mypy_cache/
 .pytest_cache/
 __pycache__/
+*.py[cod]
+
+migration-reports/
+*.migration-report.json
+*.migration-report.txt
+*.pre-alembic-*.bak
+
+.local/

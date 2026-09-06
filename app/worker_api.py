@@ -4,20 +4,13 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import time
 from typing import Any
 
+from .config import DEFAULT_STORAGE_SECRET
+
 
 DEFAULT_WORKER_TOKEN_TTL_SECONDS = 3600
-
-
-def worker_token_secret() -> str:
-    return (
-        os.environ.get("WORKER_API_TOKEN_SECRET")
-        or os.environ.get("APP_STORAGE_SECRET")
-        or "local-development-secret"
-    )
 
 
 def create_worker_token(
@@ -25,6 +18,7 @@ def create_worker_token(
     run_id: str,
     owner_key: str,
     ttl_seconds: int = DEFAULT_WORKER_TOKEN_TTL_SECONDS,
+    secret: str = DEFAULT_STORAGE_SECRET,
 ) -> str:
     payload = {
         "run_id": run_id,
@@ -32,16 +26,21 @@ def create_worker_token(
         "exp": int(time.time()) + ttl_seconds,
     }
     encoded_payload = _b64(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-    signature = _signature(encoded_payload)
+    signature = _signature(encoded_payload, secret=secret)
     return f"{encoded_payload}.{signature}"
 
 
-def verify_worker_token(token: str, *, run_id: str) -> dict[str, Any]:
+def verify_worker_token(
+    token: str,
+    *,
+    run_id: str,
+    secret: str = DEFAULT_STORAGE_SECRET,
+) -> dict[str, Any]:
     try:
         encoded_payload, signature = token.split(".", 1)
     except ValueError as exc:
         raise PermissionError("Invalid worker token.") from exc
-    expected = _signature(encoded_payload)
+    expected = _signature(encoded_payload, secret=secret)
     if not hmac.compare_digest(signature, expected):
         raise PermissionError("Invalid worker token.")
     try:
@@ -58,9 +57,9 @@ def verify_worker_token(token: str, *, run_id: str) -> dict[str, Any]:
     return payload
 
 
-def _signature(encoded_payload: str) -> str:
+def _signature(encoded_payload: str, *, secret: str) -> str:
     digest = hmac.new(
-        worker_token_secret().encode("utf-8"),
+        secret.encode("utf-8"),
         encoded_payload.encode("ascii"),
         hashlib.sha256,
     ).digest()

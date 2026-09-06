@@ -8,8 +8,9 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import timedelta
 
+from .config import DEFAULT_STORAGE_SECRET
 from .events import RunEventBus, run_deleted_event, run_event
-from .identity import UserIdentity, storage_user_key
+from .identity import UserIdentity
 from .kubernetes import KubernetesWorkerBackend, LaunchedWorkerJob
 from .metrics import Metrics
 from .storage import ACTIVE_STATES, RunRecord, RunStore, UploadItem
@@ -91,7 +92,7 @@ class RunManager:
             self.worker_backend.cancel(launched)
         if not self.store.delete_run(owner=owner, run_id=run_id):
             return "missing"
-        self.event_bus.publish(storage_user_key(owner), run_deleted_event(record))
+        self.event_bus.publish(record.owner_key, run_deleted_event(record))
         return "deleted"
 
     def shutdown(self, *, wait: bool = False) -> None:
@@ -270,7 +271,11 @@ def _uploaded_bytes(uploads: list[UploadItem]) -> int:
     return total
 
 
-def build_worker_backend(store: RunStore) -> KubernetesWorkerBackend | None:
+def build_worker_backend(
+    store: RunStore,
+    *,
+    worker_token_secret: str = DEFAULT_STORAGE_SECRET,
+) -> KubernetesWorkerBackend | None:
     mode = os.environ.get("POC_EXECUTION_BACKEND", "local").strip().lower()
     if mode in {"", "local"}:
         return None
@@ -302,6 +307,7 @@ def build_worker_backend(store: RunStore) -> KubernetesWorkerBackend | None:
             os.environ.get("ISOLATED_JOB_TTL_SECONDS_AFTER_FINISHED", "300")
         ),
         backoff_limit=int(os.environ.get("ISOLATED_JOB_BACKOFF_LIMIT", "0")),
+        worker_token_secret=worker_token_secret,
     )
 
 

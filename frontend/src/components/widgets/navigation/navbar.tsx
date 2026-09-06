@@ -3,7 +3,7 @@ import { Button, Dropdown, Layout, Popover, Typography } from "antd";
 import type { MenuProps } from "antd";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
-import logoUrl from "@/assets/iav-logo-white.svg";
+import itssLogoUrl from "@/assets/itss.png";
 import { UserBadge } from "@/components/ui";
 import { JobEventsList } from "@/components/widgets/jobs";
 import { fetchCurrentUser } from "@/lib/api/current-user";
@@ -42,7 +42,7 @@ function IconAction({
 }
 
 export function Navbar({
-  title = "Generated POC",
+  title = "IEEE ITSS Conference Dashboard",
   onNotifications,
   onOptions,
   className,
@@ -126,7 +126,7 @@ export function Navbar({
             </span>
           </Dropdown>
           <UserBadge user={user} />
-          <img className="app-navbar__logo" src={logoUrl} alt="IAV" />
+          <img className="app-navbar__logo" src={itssLogoUrl} alt="IEEE ITSS" />
         </div>
       </div>
     </Layout.Header>
